@@ -184,8 +184,7 @@ public class AuthController {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElse(null);
         if (user == null) {
-            // For security, don't disclose that the user doesn't exist
-            return ResponseEntity.ok("Mã OTP khôi phục mật khẩu đã được gửi nếu email tồn tại trong hệ thống.");
+            return ResponseEntity.badRequest().body("Error: Email này chưa được đăng ký trong hệ thống!");
         }
  
         // Generate 6-digit OTP
@@ -195,9 +194,15 @@ public class AuthController {
         userRepository.save(user);
  
         // Send real email OTP
-        emailService.sendOtpEmail(user.getEmail(), otp);
+        try {
+            emailService.sendOtpEmail(user.getEmail(), otp);
+        } catch (Exception e) {
+            log.error("Gửi email OTP thất bại cho {}: {}", user.getEmail(), e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body("Error: Không thể gửi email OTP. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.");
+        }
  
-        // Print OTP to logs (mocking email send)
+        // Print OTP to logs (for debugging)
         log.info("\n========================================\n" +
                  "SENDING EMAIL OTP TO: {}\n" +
                  "YOUR OTP CODE IS: {}\n" +
@@ -210,7 +215,10 @@ public class AuthController {
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(@Valid @RequestBody AuthDTOs.ResetPasswordRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Error: User not found with email: " + request.getEmail()));
+                .orElse(null);
+        if (user == null) {
+            return ResponseEntity.badRequest().body("Error: Email này chưa được đăng ký trong hệ thống!");
+        }
  
         if (user.getResetOtp() == null || !user.getResetOtp().equals(request.getOtp())) {
             return ResponseEntity.badRequest().body("Error: Mã OTP không chính xác!");
