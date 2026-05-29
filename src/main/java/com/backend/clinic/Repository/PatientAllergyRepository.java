@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface PatientAllergyRepository extends JpaRepository<PatientAllergy, Long> {
     List<PatientAllergy> findByPatient_PatientId(Long patientId);
+    List<PatientAllergy> findByPatient_PatientIdOrderByCreatedAtDesc(Long patientId);
 }
