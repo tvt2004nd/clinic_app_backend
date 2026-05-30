@@ -47,13 +47,19 @@ public class PublicController {
                 .filter(s -> s.getDoctor().getDoctorId().equals(doctorId) && !s.getWorkDate().isBefore(today))
                 .collect(Collectors.toList());
                 
-        var response = schedules.stream().map(s -> java.util.Map.<String, Object>of(
-                "scheduleId", s.getScheduleId(),
-                "date", s.getWorkDate().toString(),
-                "startTime", s.getShiftStart().toString(),
-                "endTime", s.getShiftEnd().toString(),
-                "status", s.getStatus()
-        )).collect(Collectors.toList());
+        var response = schedules.stream().map(s -> {
+            boolean isFull = "FULL".equals(s.getStatus()) || s.getBookedCount() > 0;
+            return java.util.Map.<String, Object>of(
+                    "scheduleId", s.getScheduleId(),
+                    "date", s.getWorkDate().toString(),
+                    "startTime", s.getShiftStart().toString(),
+                    "endTime", s.getShiftEnd().toString(),
+                    "status", s.getStatus(),
+                    "bookedCount", s.getBookedCount(),
+                    "maxPatients", s.getMaxPatients(),
+                    "isFull", isFull
+            );
+        }).collect(Collectors.toList());
 
         return ResponseEntity.ok(response);
     }

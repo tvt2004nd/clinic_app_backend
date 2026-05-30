@@ -73,15 +73,6 @@ public class ExaminationController {
         return ResponseEntity.ok(examinationService.updateSymptoms(userDetails, recordId, request));
     }
 
-    @PutMapping("/records/{recordId}/ai-reference")
-    public ResponseEntity<ExaminationDTOs.MedicalRecordDetailResponse> updateAiReference(
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            @PathVariable Long recordId,
-            @RequestBody ExaminationDTOs.AiReferenceUpdateRequest request
-    ) {
-        return ResponseEntity.ok(examinationService.updateAiReference(userDetails, recordId, request));
-    }
-
     @PutMapping("/records/{recordId}/final-diagnosis")
     public ResponseEntity<ExaminationDTOs.MedicalRecordDetailResponse> updateFinalDiagnosis(
             @AuthenticationPrincipal CustomUserDetails userDetails,
@@ -115,6 +106,22 @@ public class ExaminationController {
             @PathVariable Long recordId
     ) {
         return ResponseEntity.ok(examinationService.completeVisit(userDetails, recordId));
+    }
+
+    @GetMapping("/my-records")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR', 'ADMIN')")
+    public ResponseEntity<List<ExaminationDTOs.PatientRecordSummaryResponse>> getMyRecords(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        return ResponseEntity.ok(examinationService.getMyRecords(userDetails));
+    }
+
+    @GetMapping("/doctor/history")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<List<ExaminationDTOs.DoctorHistoryResponse>> getDoctorHistory(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        return ResponseEntity.ok(examinationService.getDoctorHistory(userDetails));
     }
 
     @GetMapping("/references/medications")

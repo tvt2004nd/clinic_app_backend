@@ -1,17 +1,22 @@
 package com.backend.clinic.Service;
 
 import com.backend.clinic.DTO.InvoiceDTOs;
+import com.backend.clinic.Entity.Doctor;
 import com.backend.clinic.Entity.Invoice;
 import com.backend.clinic.Entity.MedicalRecord;
 import com.backend.clinic.Entity.Payment;
 import com.backend.clinic.Entity.PrescriptionItem;
+import com.backend.clinic.Repository.DoctorRepository;
 import com.backend.clinic.Repository.InvoiceRepository;
 import com.backend.clinic.Repository.MedicalRecordRepository;
 import com.backend.clinic.Repository.PaymentRepository;
 import com.backend.clinic.Repository.PrescriptionItemRepository;
+import com.backend.clinic.Security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -26,6 +31,7 @@ public class InvoiceService {
     private final MedicalRecordRepository medicalRecordRepository;
     private final PrescriptionItemRepository prescriptionItemRepository;
     private final PaymentRepository paymentRepository;
+    private final DoctorRepository doctorRepository;
 
     @Transactional
     public InvoiceDTOs.InvoiceDetailResponse createInvoice(InvoiceDTOs.CreateInvoiceRequest request) {
@@ -64,6 +70,46 @@ public class InvoiceService {
         if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
 
         return mapToResponse(invoice, total);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InvoiceDTOs.DoctorInvoiceResponse> getDoctorInvoices(CustomUserDetails userDetails) {
+        Doctor doctor = doctorRepository.findByUser_UserId(userDetails.getUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Current user is not linked to a doctor profile"));
+
+        List<Invoice> invoices = invoiceRepository
+                .findAllByMedicalRecord_Doctor_DoctorIdOrderByCreatedAtDesc(doctor.getDoctorId());
+
+        return invoices.stream()
+                .map(inv -> {
+                    BigDecimal total = inv.getConsultationFee()
+                            .add(inv.getMedicationFee())
+                            .add(inv.getOtherFee() != null ? inv.getOtherFee() : BigDecimal.ZERO)
+                            .subtract(inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO);
+                    if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
+
+                    String diagnosis = inv.getMedicalRecord().getFinalDiagnosis();
+                    if ((diagnosis == null || diagnosis.isBlank())
+                            && inv.getMedicalRecord().getFinalDisease() != null) {
+                        diagnosis = inv.getMedicalRecord().getFinalDisease().getDiseaseNameVi();
+                    }
+
+                    return InvoiceDTOs.DoctorInvoiceResponse.builder()
+                            .invoiceId(inv.getInvoiceId())
+                            .invoiceCode(inv.getInvoiceCode())
+                            .recordId(inv.getMedicalRecord().getRecordId())
+                            .patientId(inv.getPatient().getPatientId())
+                            .patientName(inv.getPatient().getUser().getFullName())
+                            .consultationFee(inv.getConsultationFee())
+                            .medicationFee(inv.getMedicationFee())
+                            .totalAmount(total)
+                            .paymentStatus(inv.getPaymentStatus())
+                            .recordDiagnosis(diagnosis)
+                            .createdAt(inv.getCreatedAt())
+                            .build();
+                })
+                .toList();
     }
 
     @Transactional(readOnly = true)

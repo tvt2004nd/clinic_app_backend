@@ -44,6 +44,20 @@ public class DataInitializer implements CommandLineRunner {
         Role doctorRole = roleRepository.findAll().stream().filter(r -> "DOCTOR".equals(r.getRoleCode())).findFirst().orElseGet(() -> roleRepository.save(Role.builder().roleCode("DOCTOR").roleName("Doctor").build()));
         Role patientRole = roleRepository.findAll().stream().filter(r -> "PATIENT".equals(r.getRoleCode())).findFirst().orElseGet(() -> roleRepository.save(Role.builder().roleCode("PATIENT").roleName("Patient").build()));
 
+        // Initialize Admin User
+        if (userRepository.findByUsername("admin").isEmpty()) {
+            User admin = User.builder()
+                    .username("admin")
+                    .email("admin@dermacare.com")
+                    .passwordHash(passwordEncoder.encode("admin123"))
+                    .fullName("Quản trị viên")
+                    .phone("0123456789")
+                    .role(adminRole)
+                    .isActive(true)
+                    .build();
+            userRepository.save(admin);
+        }
+
         // Initialize Specialties
         Specialty dalieu = specialtyRepository.findAll().stream().filter(s -> "DL".equals(s.getSpecialtyCode())).findFirst().orElseGet(() -> specialtyRepository.save(Specialty.builder().specialtyCode("DL").specialtyName("Da liễu").build()));
         Specialty noikhoa = specialtyRepository.findAll().stream().filter(s -> "NK".equals(s.getSpecialtyCode())).findFirst().orElseGet(() -> specialtyRepository.save(Specialty.builder().specialtyCode("NK").specialtyName("Nội khoa").build()));

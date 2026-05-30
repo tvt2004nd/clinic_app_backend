@@ -185,13 +185,22 @@ public class ChatController {
         }
 
         return ResponseEntity.ok(conversations.values().stream()
-                .map(c -> Map.<String, Object>of(
-                        "conversationId", c.getConversationId(),
-                        "doctorId", c.getDoctor().getDoctorId(),
-                        "patientId", c.getPatient().getPatientId(),
-                        "doctorName", c.getDoctor().getUser().getFullName(),
-                        "patientName", c.getPatient().getUser().getFullName()
-                ))
+                .map(c -> {
+                    Map<String, Object> map = new java.util.LinkedHashMap<>();
+                    map.put("conversationId", c.getConversationId());
+                    map.put("doctorId", c.getDoctor().getDoctorId());
+                    map.put("patientId", c.getPatient().getPatientId());
+                    map.put("doctorName", c.getDoctor().getUser().getFullName());
+                    map.put("patientName", c.getPatient().getUser().getFullName());
+
+                    messageRepository.findFirstByConversation_ConversationIdOrderByCreatedAtDesc(c.getConversationId())
+                            .ifPresent(last -> {
+                                map.put("lastMessage", last.getContent());
+                                map.put("lastMessageTime", last.getCreatedAt().toString());
+                            });
+
+                    return map;
+                })
                 .collect(Collectors.toList()));
     }
 

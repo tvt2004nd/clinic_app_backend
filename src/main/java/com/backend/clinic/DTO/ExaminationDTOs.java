@@ -45,16 +45,6 @@ public class ExaminationDTOs {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
-    public static class AiReferenceUpdateRequest {
-        private Long aiDiagnosisId;
-        private Boolean confirmSelection;
-        private String doctorNote;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
     public static class FinalDiagnosisUpdateRequest {
         @NotBlank(message = "Final diagnosis cannot be empty")
         private String finalDiagnosis;
@@ -174,6 +164,7 @@ public class ExaminationDTOs {
         private BigDecimal price;
         private Integer stockQuantity;
         private Boolean isActive;
+        private String medicationType;
     }
 
     @Data
@@ -333,5 +324,39 @@ public class ExaminationDTOs {
     public static class FollowUpScheduleResponse {
         private MedicalRecordDetailResponse medicalRecord;
         private FollowUpAppointmentResponse followUpAppointment;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class DoctorHistoryResponse {
+        private Long recordId;
+        private String recordCode;
+        private Long patientId;
+        private String patientName;
+        private String patientPhone;
+        private String diagnosis;
+        private String diseaseName;
+        private LocalDateTime examinedAt;
+        private Integer prescriptionCount;
+        private Boolean hasInvoice;
+        private String invoiceStatus;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class PatientRecordSummaryResponse {
+        private Long recordId;
+        private String recordCode;
+        private String diagnosis;
+        private String diseaseName;
+        private String doctorName;
+        private String doctorTitle;
+        private LocalDateTime examinedAt;
+        private Integer prescriptionCount;
+        private LocalDate followUpDate;
     }
 }

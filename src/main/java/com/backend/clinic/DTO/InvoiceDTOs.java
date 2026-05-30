@@ -16,6 +16,24 @@ public class InvoiceDTOs {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class DoctorInvoiceResponse {
+        private Long invoiceId;
+        private String invoiceCode;
+        private Long recordId;
+        private Long patientId;
+        private String patientName;
+        private BigDecimal consultationFee;
+        private BigDecimal medicationFee;
+        private BigDecimal totalAmount;
+        private String paymentStatus;
+        private String recordDiagnosis;
+        private LocalDateTime createdAt;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class CreateInvoiceRequest {
         @NotNull(message = "Record ID is required")
         private Long recordId;

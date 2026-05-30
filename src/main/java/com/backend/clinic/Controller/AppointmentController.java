@@ -26,7 +26,6 @@ public class AppointmentController {
     private final UserRepository userRepository;
     private final ConversationRepository conversationRepository;
 
-    // ── PATIENT: Đặt lịch hẹn ──────────────────────────────────────────────
     @PostMapping
     public ResponseEntity<?> bookAppointment(@RequestBody Map<String, Object> body,
                                               Authentication auth) {
@@ -59,6 +58,14 @@ public class AppointmentController {
 
             if ("FULL".equals(schedule.getStatus()) || "CANCELLED".equals(schedule.getStatus())) {
                 return ResponseEntity.badRequest().body(Map.of("message", "Ca khám này không còn lịch trống"));
+            }
+
+            // Check if another patient already booked this time slot
+            boolean exists = appointmentRepository.existsByDoctor_DoctorIdAndAppointmentDateAndAppointmentTimeAndStatusIn(
+                    doctorId, schedule.getWorkDate(), schedule.getShiftStart(),
+                    List.of("PENDING", "CONFIRMED", "CHECKED_IN"));
+            if (exists) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác"));
             }
 
             String apptCode = "APT-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();

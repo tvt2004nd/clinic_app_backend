@@ -6,6 +6,7 @@ import com.backend.clinic.Entity.Appointment;
 import com.backend.clinic.Entity.ClinicRoom;
 import com.backend.clinic.Entity.Disease;
 import com.backend.clinic.Entity.Doctor;
+import com.backend.clinic.Entity.Invoice;
 import com.backend.clinic.Entity.MedicalRecord;
 import com.backend.clinic.Entity.Medication;
 import com.backend.clinic.Entity.Patient;
@@ -15,6 +16,7 @@ import com.backend.clinic.Repository.AiDiagnosisRepository;
 import com.backend.clinic.Repository.AppointmentRepository;
 import com.backend.clinic.Repository.DiseaseRepository;
 import com.backend.clinic.Repository.DoctorRepository;
+import com.backend.clinic.Repository.InvoiceRepository;
 import com.backend.clinic.Repository.MedicalRecordRepository;
 import com.backend.clinic.Repository.MedicationRepository;
 import com.backend.clinic.Repository.PatientAllergyRepository;
@@ -22,6 +24,7 @@ import com.backend.clinic.Repository.PatientRepository;
 import com.backend.clinic.Repository.PrescriptionItemRepository;
 import com.backend.clinic.Security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
@@ -35,6 +38,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -59,6 +63,7 @@ public class ExaminationService {
     private final MedicationRepository medicationRepository;
     private final PrescriptionItemRepository prescriptionItemRepository;
     private final PatientAllergyRepository patientAllergyRepository;
+    private final InvoiceRepository invoiceRepository;
 
     @Transactional(readOnly = true)
     public List<ExaminationDTOs.PatientLookupResponse> searchPatients(String keyword) {
@@ -127,6 +132,7 @@ public class ExaminationService {
 
         if (!"COMPLETED".equals(appointment.getStatus())) {
             appointment.setStatus("CHECKED_IN");
+            appointmentRepository.save(appointment);
         }
 
         return mapMedicalRecordDetail(medicalRecord);
@@ -145,39 +151,6 @@ public class ExaminationService {
         MedicalRecord medicalRecord = getMedicalRecordEntity(recordId);
         assertDoctorAccess(userDetails, medicalRecord.getDoctor());
         medicalRecord.setSymptoms(request.getSymptoms().trim());
-        return mapMedicalRecordDetail(medicalRecord);
-    }
-
-    public ExaminationDTOs.MedicalRecordDetailResponse updateAiReference(CustomUserDetails userDetails,
-                                                                         Long recordId,
-                                                                         ExaminationDTOs.AiReferenceUpdateRequest request) {
-        MedicalRecord medicalRecord = getMedicalRecordEntity(recordId);
-        Doctor actingDoctor = assertDoctorAccess(userDetails, medicalRecord.getDoctor());
-
-        if (request.getAiDiagnosisId() == null) {
-            medicalRecord.setAiDiagnosis(null);
-            return mapMedicalRecordDetail(medicalRecord);
-        }
-
-        AiDiagnosis aiDiagnosis = aiDiagnosisRepository.findById(request.getAiDiagnosisId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "AI diagnosis not found"));
-
-        if (!Objects.equals(aiDiagnosis.getPatient().getPatientId(), medicalRecord.getPatient().getPatientId())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "AI diagnosis does not belong to this patient");
-        }
-
-        medicalRecord.setAiDiagnosis(aiDiagnosis);
-
-        if (Boolean.TRUE.equals(request.getConfirmSelection())) {
-            aiDiagnosis.setIsConfirmed(true);
-            aiDiagnosis.setConfirmedBy(actingDoctor);
-            aiDiagnosis.setConfirmedAt(LocalDateTime.now());
-        }
-
-        if (request.getDoctorNote() != null) {
-            aiDiagnosis.setDoctorNote(trimToNull(request.getDoctorNote()));
-        }
-
         return mapMedicalRecordDetail(medicalRecord);
     }
 
@@ -282,7 +255,9 @@ public class ExaminationService {
                     .build());
         }
 
-        medicalRecord.getAppointment().setStatus("COMPLETED");
+        Appointment currentAppointment = medicalRecord.getAppointment();
+        currentAppointment.setStatus("COMPLETED");
+        appointmentRepository.save(currentAppointment);
 
         return ExaminationDTOs.FollowUpScheduleResponse.builder()
                 .medicalRecord(mapMedicalRecordDetail(medicalRecord))
@@ -294,13 +269,69 @@ public class ExaminationService {
         MedicalRecord medicalRecord = getMedicalRecordEntity(recordId);
         assertDoctorAccess(userDetails, medicalRecord.getDoctor());
         validateReadyForCompletion(medicalRecord);
-        medicalRecord.getAppointment().setStatus("COMPLETED");
+        Appointment appointment = medicalRecord.getAppointment();
+        appointment.setStatus("COMPLETED");
+        appointmentRepository.save(appointment);
         return mapMedicalRecordDetail(medicalRecord);
     }
 
     @Transactional(readOnly = true)
+    public List<ExaminationDTOs.PatientRecordSummaryResponse> getMyRecords(CustomUserDetails userDetails) {
+        Patient patient = patientRepository.findByUser_UserId(userDetails.getUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Patient profile not found for current user"));
+
+        List<MedicalRecord> records = medicalRecordRepository
+                .findByPatient_PatientIdOrderByExaminedAtDesc(patient.getPatientId());
+
+        return records.stream()
+                .map(this::mapPatientRecordSummary)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<ExaminationDTOs.DoctorHistoryResponse> getDoctorHistory(CustomUserDetails userDetails) {
+        Doctor doctor = doctorRepository.findByUser_UserId(userDetails.getUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "Current user is not linked to a doctor profile"));
+
+        List<MedicalRecord> records = medicalRecordRepository
+                .findByDoctor_DoctorIdOrderByExaminedAtDesc(doctor.getDoctorId());
+
+        return records.stream()
+                .filter(r -> "COMPLETED".equals(r.getAppointment().getStatus()))
+                .map(r -> {
+                    List<PrescriptionItem> items = prescriptionItemRepository
+                            .findByMedicalRecord_RecordId(r.getRecordId());
+                    var existingInvoice = invoiceRepository.findByMedicalRecord_RecordId(r.getRecordId());
+
+                    String diagnosis = r.getFinalDiagnosis();
+                    if ((diagnosis == null || diagnosis.isBlank())
+                            && r.getFinalDisease() != null) {
+                        diagnosis = r.getFinalDisease().getDiseaseNameVi();
+                    }
+
+                    return ExaminationDTOs.DoctorHistoryResponse.builder()
+                            .recordId(r.getRecordId())
+                            .recordCode(r.getRecordCode())
+                            .patientId(r.getPatient().getPatientId())
+                            .patientName(r.getPatient().getUser().getFullName())
+                            .patientPhone(r.getPatient().getUser().getPhone())
+                            .diagnosis(diagnosis)
+                            .diseaseName(r.getFinalDisease() != null
+                                    ? r.getFinalDisease().getDiseaseNameVi() : null)
+                            .examinedAt(r.getExaminedAt())
+                            .prescriptionCount(items.size())
+                            .hasInvoice(existingInvoice.isPresent())
+                            .invoiceStatus(existingInvoice.map(Invoice::getPaymentStatus).orElse(null))
+                            .build();
+                })
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ExaminationDTOs.MedicationLookupResponse> searchMedications(String keyword, boolean activeOnly) {
-        return medicationRepository.searchMedications(normalizeKeyword(keyword), activeOnly).stream()
+        return medicationRepository.searchMedications(normalizeKeyword(keyword), activeOnly, Pageable.unpaged()).stream()
                 .limit(50)
                 .map(this::mapMedicationLookup)
                 .toList();
@@ -472,6 +503,7 @@ public class ExaminationService {
                 .price(medication.getPrice())
                 .stockQuantity(medication.getStockQuantity())
                 .isActive(medication.getIsActive())
+                .medicationType(medication.getMedicationType())
                 .build();
     }
 
@@ -636,6 +668,24 @@ public class ExaminationService {
                 .durationDays(item.getDurationDays())
                 .unitPrice(item.getUnitPrice())
                 .totalPrice(totalPrice)
+                .build();
+    }
+
+    private ExaminationDTOs.PatientRecordSummaryResponse mapPatientRecordSummary(MedicalRecord record) {
+        List<PrescriptionItem> items = prescriptionItemRepository
+                .findByMedicalRecord_RecordId(record.getRecordId());
+
+        return ExaminationDTOs.PatientRecordSummaryResponse.builder()
+                .recordId(record.getRecordId())
+                .recordCode(record.getRecordCode())
+                .diagnosis(record.getFinalDiagnosis())
+                .diseaseName(record.getFinalDisease() != null
+                        ? record.getFinalDisease().getDiseaseNameVi() : null)
+                .doctorName(record.getDoctor().getUser().getFullName())
+                .doctorTitle(record.getDoctor().getTitle())
+                .examinedAt(record.getExaminedAt())
+                .prescriptionCount(items.size())
+                .followUpDate(record.getFollowUpDate())
                 .build();
     }
 
