@@ -359,4 +359,16 @@ public class ExaminationDTOs {
         private Integer prescriptionCount;
         private LocalDate followUpDate;
     }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class DoctorPatientResponse {
+        private Long patientId;
+        private String patientCode;
+        private String fullName;
+        private String phone;
+        private String lastVisitDate;
+    }
 }

@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -29,6 +30,7 @@ public class AdminController {
     private final AppointmentRepository appointmentRepository;
     private final RoleRepository roleRepository;
     private final SpecialtyRepository specialtyRepository;
+    private final InvoiceRepository invoiceRepository;
     private final PasswordEncoder passwordEncoder;
 
     @GetMapping("/users")
@@ -562,6 +564,52 @@ public class AdminController {
                 "roleCode", r.getRoleCode(),
                 "roleName", r.getRoleName()
         )).toList();
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/invoices")
+    public ResponseEntity<?> listInvoices(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        PageRequest pageable = PageRequest.of(page, size);
+        Page<Invoice> invoices;
+        if (keyword != null && !keyword.isBlank()) {
+            invoices = invoiceRepository.searchInvoices(keyword, pageable);
+        } else {
+            invoices = invoiceRepository.findAll(pageable);
+        }
+        var result = invoices.map(inv -> {
+            var total = inv.getConsultationFee()
+                    .add(inv.getMedicationFee())
+                    .add(inv.getOtherFee() != null ? inv.getOtherFee() : BigDecimal.ZERO)
+                    .subtract(inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO);
+            if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
+
+            var m = new LinkedHashMap<String, Object>();
+            m.put("invoiceId", inv.getInvoiceId());
+            m.put("invoiceCode", inv.getInvoiceCode());
+            m.put("recordId", inv.getMedicalRecord().getRecordId());
+            m.put("patientId", inv.getPatient().getPatientId());
+            m.put("patientName", inv.getPatient().getUser().getFullName());
+            m.put("patientPhone", inv.getPatient().getUser().getPhone());
+            m.put("consultationFee", inv.getConsultationFee());
+            m.put("medicationFee", inv.getMedicationFee());
+            m.put("otherFee", inv.getOtherFee());
+            m.put("discount", inv.getDiscount());
+            m.put("totalAmount", total);
+            m.put("paymentStatus", inv.getPaymentStatus());
+            m.put("createdAt", inv.getCreatedAt());
+            if (inv.getMedicalRecord().getDoctor() != null) {
+                m.put("doctorName", inv.getMedicalRecord().getDoctor().getUser().getFullName());
+            }
+            String diagnosis = inv.getMedicalRecord().getFinalDiagnosis();
+            if ((diagnosis == null || diagnosis.isBlank()) && inv.getMedicalRecord().getFinalDisease() != null) {
+                diagnosis = inv.getMedicalRecord().getFinalDisease().getDiseaseNameVi();
+            }
+            m.put("diagnosis", diagnosis);
+            return m;
+        });
         return ResponseEntity.ok(result);
     }
 }

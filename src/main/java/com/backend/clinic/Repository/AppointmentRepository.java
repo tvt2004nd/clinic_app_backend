@@ -16,10 +16,13 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     Optional<Appointment> findByAppointmentCode(String appointmentCode);
     boolean existsBySchedule_ScheduleId(Long scheduleId);
     boolean existsByDoctor_DoctorIdAndPatient_PatientIdAndStatus(Long doctorId, Long patientId, String status);
+    boolean existsByDoctor_DoctorIdAndPatient_PatientIdAndStatusNotIn(Long doctorId, Long patientId, java.util.List<String> statuses);
     boolean existsByDoctor_DoctorIdAndAppointmentDateAndAppointmentTimeAndStatusIn(
             Long doctorId, LocalDate appointmentDate, LocalTime appointmentTime, java.util.List<String> statuses);
     List<Appointment> findByDoctor_DoctorIdAndStatus(Long doctorId, String status);
+    List<Appointment> findByDoctor_DoctorIdAndStatusNotIn(Long doctorId, java.util.List<String> statuses);
     List<Appointment> findByPatient_PatientIdAndStatus(Long patientId, String status);
+    List<Appointment> findByPatient_PatientIdAndStatusNotIn(Long patientId, java.util.List<String> statuses);
 
     @Query("""
             select a from Appointment a

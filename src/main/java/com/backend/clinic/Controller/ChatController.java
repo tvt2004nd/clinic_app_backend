@@ -90,8 +90,9 @@ public class ChatController {
             return ResponseEntity.badRequest().body(Map.of("error", "Missing doctorId or patientId"));
         }
 
-        if (!appointmentRepository.existsByDoctor_DoctorIdAndPatient_PatientIdAndStatus(doctorId, patientId, "CONFIRMED")) {
-            return ResponseEntity.status(403).body(Map.of("error", "Chỉ có thể chat sau khi lịch hẹn được bác sĩ xác nhận"));
+        if (!appointmentRepository.existsByDoctor_DoctorIdAndPatient_PatientIdAndStatusNotIn(doctorId, patientId,
+                List.of("CANCELLED", "NO_SHOW"))) {
+            return ResponseEntity.status(403).body(Map.of("error", "Bạn cần đặt lịch khám trước khi chat với bác sĩ này"));
         }
 
         Long finalDoctorId = doctorId;
@@ -165,9 +166,11 @@ public class ChatController {
 
         List<Appointment> appointments;
         if (doctor != null) {
-            appointments = appointmentRepository.findByDoctor_DoctorIdAndStatus(doctor.getDoctorId(), "CONFIRMED");
+            appointments = appointmentRepository.findByDoctor_DoctorIdAndStatusNotIn(doctor.getDoctorId(),
+                    List.of("CANCELLED", "NO_SHOW"));
         } else if (patient != null) {
-            appointments = appointmentRepository.findByPatient_PatientIdAndStatus(patient.getPatientId(), "CONFIRMED");
+            appointments = appointmentRepository.findByPatient_PatientIdAndStatusNotIn(patient.getPatientId(),
+                    List.of("CANCELLED", "NO_SHOW"));
         } else {
             return ResponseEntity.ok(List.of());
         }
