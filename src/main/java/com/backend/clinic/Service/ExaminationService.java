@@ -147,7 +147,7 @@ public class ExaminationService {
     @Transactional(readOnly = true)
     public ExaminationDTOs.MedicalRecordDetailResponse getMedicalRecord(CustomUserDetails userDetails, Long recordId) {
         MedicalRecord medicalRecord = getMedicalRecordEntity(recordId);
-        assertDoctorAccess(userDetails, medicalRecord.getDoctor());
+        assertDoctorOrPatientAccess(userDetails, medicalRecord);
         return mapMedicalRecordDetail(medicalRecord);
     }
 
@@ -410,6 +410,31 @@ public class ExaminationService {
         }
 
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Doctor context is required");
+    }
+
+    private void assertDoctorOrPatientAccess(CustomUserDetails userDetails, MedicalRecord medicalRecord) {
+        boolean isAdmin = hasRole(userDetails, "ADMIN");
+        if (isAdmin) return;
+
+        // Doctor access
+        Doctor targetDoctor = medicalRecord.getDoctor();
+        Optional<Doctor> currentDoctor = doctorRepository.findByUser_UserId(userDetails.getUserId());
+        if (currentDoctor.isPresent()) {
+            if (Objects.equals(currentDoctor.get().getDoctorId(), targetDoctor.getDoctorId())) {
+                return;
+            }
+        }
+
+        // Patient access — allow patient to view their own record
+        if (medicalRecord.getPatient() != null
+                && medicalRecord.getPatient().getUser() != null) {
+            Long patientUserId = medicalRecord.getPatient().getUser().getUserId();
+            if (Objects.equals(patientUserId, userDetails.getUserId())) {
+                return;
+            }
+        }
+
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You do not have access to this medical record");
     }
 
     private Doctor assertDoctorAccess(CustomUserDetails userDetails, Doctor targetDoctor) {

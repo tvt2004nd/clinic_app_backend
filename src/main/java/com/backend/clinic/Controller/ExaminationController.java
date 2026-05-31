@@ -57,6 +57,7 @@ public class ExaminationController {
     }
 
     @GetMapping("/records/{recordId}")
+    @PreAuthorize("hasAnyRole('PATIENT', 'DOCTOR', 'ADMIN')")
     public ResponseEntity<ExaminationDTOs.MedicalRecordDetailResponse> getMedicalRecord(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable Long recordId
