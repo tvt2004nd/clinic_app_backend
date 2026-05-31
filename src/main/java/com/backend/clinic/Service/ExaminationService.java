@@ -593,6 +593,7 @@ public class ExaminationService {
                 .fullName(doctor.getUser().getFullName())
                 .title(doctor.getTitle())
                 .specialtyName(doctor.getSpecialty() != null ? doctor.getSpecialty().getSpecialtyName() : null)
+                .consultationFee(doctor.getConsultationFee())
                 .build();
     }
 

@@ -212,6 +212,7 @@ public class ExaminationDTOs {
         private String fullName;
         private String title;
         private String specialtyName;
+        private BigDecimal consultationFee;
     }
 
     @Data
