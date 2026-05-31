@@ -16,6 +16,24 @@ public class InvoiceDTOs {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class PatientInvoiceResponse {
+        private Long invoiceId;
+        private String invoiceCode;
+        private String doctorName;
+        private String recordDiagnosis;
+        private BigDecimal consultationFee;
+        private BigDecimal medicationFee;
+        private BigDecimal otherFee;
+        private BigDecimal discount;
+        private BigDecimal totalAmount;
+        private String paymentStatus;
+        private LocalDateTime createdAt;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class DoctorInvoiceResponse {
         private Long invoiceId;
         private String invoiceCode;
@@ -71,7 +89,26 @@ public class InvoiceDTOs {
         @DecimalMin(value = "0.0", inclusive = false, message = "Amount must be greater than 0")
         private BigDecimal amount;
 
-        private String paymentMethod; // CASH, BANK_TRANSFER, MOMO, VNPAY
+        private String paymentMethod;
+        private String stripePaymentIntentId;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CreatePaymentIntentRequest {
+        @NotNull(message = "Invoice ID is required")
+        private Long invoiceId;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CreatePaymentIntentResponse {
+        private String clientSecret;
+        private Long invoiceId;
     }
 
     @Data

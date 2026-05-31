@@ -44,11 +44,25 @@ public class InvoiceController {
         return ResponseEntity.ok(invoiceService.getDoctorInvoices(userDetails));
     }
 
+    @GetMapping("/my")
+    public ResponseEntity<List<InvoiceDTOs.PatientInvoiceResponse>> getMyInvoices(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        return ResponseEntity.ok(invoiceService.getPatientInvoices(userDetails));
+    }
+
     @GetMapping("/record/{recordId}")
     public ResponseEntity<InvoiceDTOs.InvoiceDetailResponse> getInvoiceByRecord(
             @PathVariable Long recordId
     ) {
         return ResponseEntity.ok(invoiceService.getInvoiceByRecord(recordId));
+    }
+
+    @PostMapping("/{invoiceId}/create-payment-intent")
+    public ResponseEntity<InvoiceDTOs.CreatePaymentIntentResponse> createPaymentIntent(
+            @PathVariable Long invoiceId
+    ) {
+        return ResponseEntity.ok(invoiceService.createPaymentIntent(invoiceId));
     }
 
     @PutMapping("/{invoiceId}/pay")

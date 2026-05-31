@@ -6,6 +6,8 @@ import com.backend.clinic.Entity.Appointment;
 import com.backend.clinic.Entity.ClinicRoom;
 import com.backend.clinic.Entity.Disease;
 import com.backend.clinic.Entity.Doctor;
+import com.backend.clinic.Entity.DoctorSchedule;
+import com.backend.clinic.Entity.ExamPhoto;
 import com.backend.clinic.Entity.Invoice;
 import com.backend.clinic.Entity.MedicalRecord;
 import com.backend.clinic.Entity.Medication;
@@ -16,6 +18,8 @@ import com.backend.clinic.Repository.AiDiagnosisRepository;
 import com.backend.clinic.Repository.AppointmentRepository;
 import com.backend.clinic.Repository.DiseaseRepository;
 import com.backend.clinic.Repository.DoctorRepository;
+import com.backend.clinic.Repository.DoctorScheduleRepository;
+import com.backend.clinic.Repository.ExamPhotoRepository;
 import com.backend.clinic.Repository.InvoiceRepository;
 import com.backend.clinic.Repository.MedicalRecordRepository;
 import com.backend.clinic.Repository.MedicationRepository;
@@ -64,6 +68,8 @@ public class ExaminationService {
     private final PrescriptionItemRepository prescriptionItemRepository;
     private final PatientAllergyRepository patientAllergyRepository;
     private final InvoiceRepository invoiceRepository;
+    private final DoctorScheduleRepository doctorScheduleRepository;
+    private final ExamPhotoRepository examPhotoRepository;
 
     @Transactional(readOnly = true)
     public List<ExaminationDTOs.PatientLookupResponse> searchPatients(String keyword) {
@@ -108,7 +114,7 @@ public class ExaminationService {
                     .appointmentDate(request.getAppointmentDate() != null ? request.getAppointmentDate() : LocalDate.now())
                     .appointmentTime(request.getAppointmentTime() != null ? request.getAppointmentTime() : LocalTime.now().withSecond(0).withNano(0))
                     .reason(trimToNull(request.getReason()))
-                    .status("CHECKED_IN")
+                    .status("CONFIRMED")
                     .build();
             appointment = appointmentRepository.save(appointment);
         }
@@ -131,7 +137,7 @@ public class ExaminationService {
         }
 
         if (!"COMPLETED".equals(appointment.getStatus())) {
-            appointment.setStatus("CHECKED_IN");
+            appointment.setStatus("CONFIRMED");
             appointmentRepository.save(appointment);
         }
 
@@ -251,7 +257,7 @@ public class ExaminationService {
                     .reason(StringUtils.hasText(request.getReason())
                             ? request.getReason().trim()
                             : "Follow-up from record " + medicalRecord.getRecordCode())
-                    .status("PENDING")
+                    .status("CONFIRMED")
                     .build());
         }
 
@@ -272,6 +278,19 @@ public class ExaminationService {
         Appointment appointment = medicalRecord.getAppointment();
         appointment.setStatus("COMPLETED");
         appointmentRepository.save(appointment);
+
+        // Release slot: decrease bookedCount on the schedule
+        if (appointment.getSchedule() != null) {
+            DoctorSchedule schedule = appointment.getSchedule();
+            if (schedule.getBookedCount() > 0) {
+                schedule.setBookedCount(schedule.getBookedCount() - 1);
+            }
+            if ("FULL".equals(schedule.getStatus())) {
+                schedule.setStatus("AVAILABLE");
+            }
+            doctorScheduleRepository.save(schedule);
+        }
+
         return mapMedicalRecordDetail(medicalRecord);
     }
 
@@ -526,6 +545,9 @@ public class ExaminationService {
                 .findByPatient_PatientIdOrderByCreatedAtDesc(medicalRecord.getPatient().getPatientId());
         List<PrescriptionItem> prescriptionItems = prescriptionItemRepository
                 .findByMedicalRecord_RecordId(medicalRecord.getRecordId());
+        List<String> photoUrls = examPhotoRepository
+                .findByRecordIdOrderBySortOrderAsc(medicalRecord.getRecordId())
+                .stream().map(ExamPhoto::getImageUrl).toList();
 
         return ExaminationDTOs.MedicalRecordDetailResponse.builder()
                 .recordId(medicalRecord.getRecordId())
@@ -542,6 +564,7 @@ public class ExaminationService {
                 .followUpDate(medicalRecord.getFollowUpDate())
                 .allergies(allergies.stream().map(this::mapAllergySummary).toList())
                 .prescriptionItems(prescriptionItems.stream().map(this::mapPrescriptionItem).toList())
+                .photoUrls(photoUrls)
                 .examinedAt(medicalRecord.getExaminedAt())
                 .build();
     }
@@ -669,6 +692,7 @@ public class ExaminationService {
                 .durationDays(item.getDurationDays())
                 .unitPrice(item.getUnitPrice())
                 .totalPrice(totalPrice)
+                .imageUrl(item.getMedication().getImageUrl())
                 .build();
     }
 

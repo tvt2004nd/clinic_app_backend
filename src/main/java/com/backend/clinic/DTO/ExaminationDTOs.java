@@ -280,6 +280,7 @@ public class ExaminationDTOs {
         private Integer durationDays;
         private BigDecimal unitPrice;
         private BigDecimal totalPrice;
+        private String imageUrl;
     }
 
     @Data
@@ -315,6 +316,7 @@ public class ExaminationDTOs {
         private LocalDate followUpDate;
         private List<AllergySummaryResponse> allergies;
         private List<PrescriptionItemResponse> prescriptionItems;
+        private List<String> photoUrls;
         private LocalDateTime examinedAt;
     }
 

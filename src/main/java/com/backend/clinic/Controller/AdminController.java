@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -28,6 +30,8 @@ public class AdminController {
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
     private final AppointmentRepository appointmentRepository;
+    private final DoctorScheduleRepository doctorScheduleRepository;
+    private final ClinicRoomRepository clinicRoomRepository;
     private final RoleRepository roleRepository;
     private final SpecialtyRepository specialtyRepository;
     private final InvoiceRepository invoiceRepository;
@@ -284,22 +288,29 @@ public class AdminController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Long doctorId,
             @RequestParam(required = false) String keyword) {
+        var normalizedStatus = normalizeAppointmentStatus(status);
         var all = appointmentRepository.findAll(Sort.by("appointmentDate").descending().and(Sort.by("appointmentTime").descending()));
         var result = all.stream()
                 .filter(a -> date == null || a.getAppointmentDate().equals(date))
-                .filter(a -> status == null || a.getStatus().equals(status))
+                .filter(a -> normalizedStatus == null || a.getStatus().equals(normalizedStatus))
                 .filter(a -> doctorId == null || a.getDoctor().getDoctorId().equals(doctorId))
                 .filter(a -> keyword == null || keyword.isBlank()
                         || a.getAppointmentCode().toLowerCase().contains(keyword.toLowerCase())
-                        || a.getPatient().getUser().getFullName().toLowerCase().contains(keyword.toLowerCase())
+                        || (a.getPatient() != null && a.getPatient().getUser().getFullName().toLowerCase().contains(keyword.toLowerCase()))
                         || a.getDoctor().getUser().getFullName().toLowerCase().contains(keyword.toLowerCase()))
                 .map(a -> {
                     var m = new LinkedHashMap<String, Object>();
                     m.put("appointmentId", a.getAppointmentId());
                     m.put("appointmentCode", a.getAppointmentCode());
-                    m.put("patientId", a.getPatient().getPatientId());
-                    m.put("patientName", a.getPatient().getUser().getFullName());
-                    m.put("patientCode", a.getPatient().getPatientCode());
+                    if (a.getPatient() != null) {
+                        m.put("patientId", a.getPatient().getPatientId());
+                        m.put("patientName", a.getPatient().getUser().getFullName());
+                        m.put("patientCode", a.getPatient().getPatientCode());
+                    } else {
+                        m.put("patientId", null);
+                        m.put("patientName", "--");
+                        m.put("patientCode", null);
+                    }
                     m.put("doctorId", a.getDoctor().getDoctorId());
                     m.put("doctorName", a.getDoctor().getUser().getFullName());
                     m.put("doctorCode", a.getDoctor().getDoctorCode());
@@ -494,14 +505,21 @@ public class AdminController {
         String appointmentDate = (String) body.get("appointmentDate");
         String appointmentTime = (String) body.get("appointmentTime");
 
-        if (patientId == null || doctorId == null || appointmentDate == null || appointmentTime == null) {
+        if (doctorId == null || appointmentDate == null || appointmentTime == null) {
             return ResponseEntity.badRequest().body(Map.of("message", "Thiếu thông tin bắt buộc"));
         }
 
-        Patient patient = patientRepository.findById(patientId).orElse(null);
+        Patient patient = null;
+        if (patientId != null) {
+            patient = patientRepository.findById(patientId).orElse(null);
+            if (patient == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Bệnh nhân không tồn tại"));
+            }
+        }
+
         Doctor doctor = doctorRepository.findById(doctorId).orElse(null);
-        if (patient == null || doctor == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Bệnh nhân hoặc bác sĩ không tồn tại"));
+        if (doctor == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Bác sĩ không tồn tại"));
         }
 
         String apptCode = "APT" + System.currentTimeMillis();
@@ -512,7 +530,7 @@ public class AdminController {
                 .appointmentDate(java.time.LocalDate.parse(appointmentDate))
                 .appointmentTime(java.time.LocalTime.parse(appointmentTime))
                 .reason((String) body.get("reason"))
-                .status("SCHEDULED")
+                .status(normalizeAppointmentStatus("SCHEDULED"))
                 .build();
         appointment = appointmentRepository.save(appointment);
 
@@ -524,7 +542,7 @@ public class AdminController {
         Appointment appointment = appointmentRepository.findById(id).orElse(null);
         if (appointment == null) return ResponseEntity.notFound().build();
 
-        if (body.containsKey("status")) appointment.setStatus((String) body.get("status"));
+        if (body.containsKey("status")) appointment.setStatus(normalizeAppointmentStatus((String) body.get("status")));
         if (body.containsKey("cancelReason")) appointment.setCancelReason((String) body.get("cancelReason"));
         if (body.containsKey("reason")) appointment.setReason((String) body.get("reason"));
         if (body.containsKey("appointmentDate")) appointment.setAppointmentDate(java.time.LocalDate.parse((String) body.get("appointmentDate")));
@@ -543,6 +561,123 @@ public class AdminController {
         if (!appointmentRepository.existsById(id)) return ResponseEntity.notFound().build();
         appointmentRepository.deleteById(id);
         return ResponseEntity.ok(Map.of("message", "Đã xóa lịch hẹn"));
+    }
+
+    @GetMapping("/doctor-schedules")
+    public ResponseEntity<?> listDoctorSchedules(
+            @RequestParam(required = false) Long doctorId,
+            @RequestParam(required = false) Long roomId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) String status) {
+        List<DoctorSchedule> schedules = doctorScheduleRepository.searchAssignments(
+                doctorId, roomId, startDate, endDate, status != null && !status.isBlank() ? status.trim().toUpperCase() : null);
+
+        var result = schedules.stream().map(s -> {
+            var m = new LinkedHashMap<String, Object>();
+            m.put("scheduleId", s.getScheduleId());
+            m.put("doctorId", s.getDoctor().getDoctorId());
+            m.put("doctorName", s.getDoctor().getUser().getFullName());
+            m.put("roomId", s.getClinicRoom() != null ? s.getClinicRoom().getRoomId() : null);
+            m.put("roomName", s.getClinicRoom() != null ? s.getClinicRoom().getRoomName() : null);
+            m.put("workDate", s.getWorkDate().toString());
+            m.put("shiftStart", s.getShiftStart().toString());
+            m.put("shiftEnd", s.getShiftEnd().toString());
+            m.put("maxPatients", s.getMaxPatients());
+            m.put("bookedCount", s.getBookedCount());
+            m.put("status", s.getStatus());
+            m.put("createdAt", s.getCreatedAt());
+            return m;
+        }).toList();
+
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/doctor-schedules")
+    public ResponseEntity<?> createDoctorSchedule(@RequestBody Map<String, Object> body) {
+        Long doctorId = body.get("doctorId") != null ? ((Number) body.get("doctorId")).longValue() : null;
+        Long roomId = body.get("roomId") != null ? ((Number) body.get("roomId")).longValue() : null;
+        String workDate = (String) body.get("workDate");
+        String shiftStart = (String) body.get("shiftStart");
+        String shiftEnd = (String) body.get("shiftEnd");
+        Integer maxPatients = body.get("maxPatients") != null ? ((Number) body.get("maxPatients")).intValue() : 20;
+        String status = (String) body.get("status");
+
+        if (doctorId == null || workDate == null || shiftStart == null || shiftEnd == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "doctorId, workDate, shiftStart và shiftEnd là bắt buộc"));
+        }
+
+        Doctor doctor = doctorRepository.findById(doctorId).orElse(null);
+        if (doctor == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Bác sĩ không tồn tại"));
+        }
+
+        ClinicRoom room = null;
+        if (roomId != null) {
+            room = clinicRoomRepository.findById(roomId).orElse(null);
+            if (room == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Phòng khám không tồn tại"));
+            }
+        }
+
+        LocalDate date;
+        LocalTime start;
+        LocalTime end;
+        try {
+            date = LocalDate.parse(workDate);
+            start = LocalTime.parse(shiftStart);
+            end = LocalTime.parse(shiftEnd);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "workDate, shiftStart hoặc shiftEnd không đúng định dạng"));
+        }
+
+        if (!end.isAfter(start)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "shiftEnd phải sau shiftStart"));
+        }
+
+        if (!doctorScheduleRepository.findDoctorOverlaps(doctorId, date, start, end, null).isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Bác sĩ đã có lịch trùng ca trong thời gian này"));
+        }
+        if (room != null && !doctorScheduleRepository.findRoomOverlaps(roomId, date, start, end, null).isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Phòng khám đã có lịch trùng ca trong thời gian này"));
+        }
+
+        DoctorSchedule schedule = DoctorSchedule.builder()
+                .doctor(doctor)
+                .clinicRoom(room)
+                .workDate(date)
+                .shiftStart(start)
+                .shiftEnd(end)
+                .maxPatients(maxPatients)
+                .status(status != null && !status.isBlank() ? status.trim().toUpperCase() : "AVAILABLE")
+                .build();
+        schedule = doctorScheduleRepository.save(schedule);
+
+        var response = new LinkedHashMap<String, Object>();
+        response.put("scheduleId", schedule.getScheduleId());
+        response.put("doctorId", schedule.getDoctor().getDoctorId());
+        response.put("doctorName", schedule.getDoctor().getUser().getFullName());
+        response.put("roomId", schedule.getClinicRoom() != null ? schedule.getClinicRoom().getRoomId() : null);
+        response.put("roomName", schedule.getClinicRoom() != null ? schedule.getClinicRoom().getRoomName() : null);
+        response.put("workDate", schedule.getWorkDate().toString());
+        response.put("shiftStart", schedule.getShiftStart().toString());
+        response.put("shiftEnd", schedule.getShiftEnd().toString());
+        response.put("maxPatients", schedule.getMaxPatients());
+        response.put("bookedCount", schedule.getBookedCount());
+        response.put("status", schedule.getStatus());
+        response.put("createdAt", schedule.getCreatedAt());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    private String normalizeAppointmentStatus(String status) {
+        if (status == null || status.isBlank()) return null;
+        switch (status.trim().toUpperCase()) {
+            case "SCHEDULED":
+                return "PENDING";
+            default:
+                return status.trim().toUpperCase();
+        }
     }
 
     @GetMapping("/specialties")
