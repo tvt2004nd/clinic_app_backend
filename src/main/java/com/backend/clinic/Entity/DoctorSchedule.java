@@ -28,6 +28,10 @@ public class DoctorSchedule {
     @JoinColumn(name = "doctor_id", nullable = false)
     private Doctor doctor;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "room_id")
+    private ClinicRoom clinicRoom;
+
     @Column(name = "work_date", nullable = false)
     private LocalDate workDate;
 
