@@ -40,6 +40,9 @@ public class Medication {
     @Column(length = 20)
     private String unit;
 
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
     @Builder.Default
     @Column(precision = 10, scale = 2)
     private BigDecimal price = BigDecimal.ZERO;
@@ -51,4 +54,7 @@ public class Medication {
     @Builder.Default
     @Column(name = "is_active")
     private Boolean isActive = true;
+
+    @Column(name = "medication_type", length = 20)
+    private String medicationType;
 }

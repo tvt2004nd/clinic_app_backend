@@ -55,6 +55,9 @@ public class Invoice {
     @Column(name = "total_amount", insertable = false, updatable = false, precision = 12, scale = 2)
     private BigDecimal totalAmount;
 
+    @Column(name = "stripe_payment_intent_id", length = 100)
+    private String stripePaymentIntentId;
+
     @Builder.Default
     @Column(name = "payment_status", columnDefinition = "ENUM('UNPAID','PAID','PARTIAL','REFUNDED','CANCELLED') DEFAULT 'UNPAID'")
     private String paymentStatus = "UNPAID";
