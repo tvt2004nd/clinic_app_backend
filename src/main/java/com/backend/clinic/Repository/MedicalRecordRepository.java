@@ -6,8 +6,11 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
+import com.backend.clinic.Entity.Patient;
+
 @Repository
 public interface MedicalRecordRepository extends JpaRepository<MedicalRecord, Long> {
     Optional<MedicalRecord> findByRecordCode(String recordCode);
     Optional<MedicalRecord> findByAppointment_AppointmentId(Long appointmentId);
+    Optional<MedicalRecord> findTop1ByPatientOrderByExaminedAtDesc(Patient patient);
 }

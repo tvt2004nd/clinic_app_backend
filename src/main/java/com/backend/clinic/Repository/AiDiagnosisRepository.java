@@ -6,7 +6,11 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+import com.backend.clinic.Entity.Patient;
+import java.util.Optional;
+
 @Repository
 public interface AiDiagnosisRepository extends JpaRepository<AiDiagnosis, Long> {
     List<AiDiagnosis> findByPatient_PatientId(Long patientId);
+    Optional<AiDiagnosis> findTop1ByPatientOrderByCreatedAtDesc(Patient patient);
 }
