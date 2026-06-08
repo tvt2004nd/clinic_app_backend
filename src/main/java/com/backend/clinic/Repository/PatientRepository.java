@@ -1,6 +1,7 @@
 package com.backend.clinic.Repository;
 
 import com.backend.clinic.Entity.Patient;
+import com.backend.clinic.Entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,6 +14,7 @@ import java.util.Optional;
 public interface PatientRepository extends JpaRepository<Patient, Long> {
     Optional<Patient> findByPatientCode(String patientCode);
     Optional<Patient> findByUser_UserId(Long userId);
+    Optional<Patient> findByUser(User user);
 
     @Query("""
             select p from Patient p
