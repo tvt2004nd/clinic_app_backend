@@ -185,10 +185,13 @@ public class AuthController {
                 .orElse(null);
         if (user == null) {
 
+
             // For security, don't disclose that the user doesn't exist
             return ResponseEntity.ok("Mã OTP khôi phục mật khẩu đã được gửi nếu email tồn tại trong hệ thống.");
 
             return ResponseEntity.badRequest().body("Error: Email này chưa được đăng ký trong hệ thống!");
+
+
 
         }
  
@@ -200,9 +203,21 @@ public class AuthController {
  
         // Send real email OTP
 
+
         emailService.sendOtpEmail(user.getEmail(), otp);
  
         // Print OTP to logs (mocking email send)
+
+        try {
+            emailService.sendOtpEmail(user.getEmail(), otp);
+        } catch (Exception e) {
+            log.error("Gửi email OTP thất bại cho {}: {}", user.getEmail(), e.getMessage(), e);
+            return ResponseEntity.internalServerError()
+                    .body("Error: Không thể gửi email OTP. Vui lòng thử lại sau hoặc liên hệ hỗ trợ.");
+        }
+ 
+        // Print OTP to logs (for debugging)
+
 
         try {
             emailService.sendOtpEmail(user.getEmail(), otp);
@@ -229,10 +244,13 @@ public class AuthController {
 
                 .orElseThrow(() -> new RuntimeException("Error: User not found with email: " + request.getEmail()));
 
+
                 .orElse(null);
         if (user == null) {
             return ResponseEntity.badRequest().body("Error: Email này chưa được đăng ký trong hệ thống!");
         }
+
+
 
  
         if (user.getResetOtp() == null || !user.getResetOtp().equals(request.getOtp())) {
