@@ -4,6 +4,7 @@ import com.backend.clinic.Entity.Doctor;
 import com.backend.clinic.Entity.DoctorSchedule;
 import com.backend.clinic.Repository.DoctorRepository;
 import com.backend.clinic.Repository.DoctorScheduleRepository;
+import com.backend.clinic.Service.ClinicManagementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ public class PublicController {
 
     private final DoctorRepository doctorRepository;
     private final DoctorScheduleRepository doctorScheduleRepository;
+    private final ClinicManagementService clinicManagementService;
 
     @Transactional(readOnly = true)
     @GetMapping("/doctors")
@@ -32,9 +34,8 @@ public class PublicController {
                 "specialty", doc.getSpecialty().getSpecialtyName(),
                 "experienceYears", doc.getExperienceYears(),
                 "rating", doc.getRating(),
-                "fee", doc.getConsultationFee()
-        )).collect(Collectors.toList());
-        
+                "fee", doc.getConsultationFee())).collect(Collectors.toList());
+
         return ResponseEntity.ok(response);
     }
 
@@ -46,19 +47,19 @@ public class PublicController {
         List<DoctorSchedule> schedules = doctorScheduleRepository.findAll().stream()
                 .filter(s -> s.getDoctor().getDoctorId().equals(doctorId) && !s.getWorkDate().isBefore(today))
                 .collect(Collectors.toList());
-                
+
         var response = schedules.stream().map(s -> {
-            boolean isFull = "FULL".equals(s.getStatus()) || s.getBookedCount() > 0;
+            String derived = clinicManagementService.computeScheduleStatus(s);
+            boolean isFull = "FULL".equals(derived);
             return java.util.Map.<String, Object>of(
                     "scheduleId", s.getScheduleId(),
                     "date", s.getWorkDate().toString(),
                     "startTime", s.getShiftStart().toString(),
                     "endTime", s.getShiftEnd().toString(),
-                    "status", s.getStatus(),
+                    "status", derived,
                     "bookedCount", s.getBookedCount(),
                     "maxPatients", s.getMaxPatients(),
-                    "isFull", isFull
-            );
+                    "isFull", isFull);
         }).collect(Collectors.toList());
 
         return ResponseEntity.ok(response);

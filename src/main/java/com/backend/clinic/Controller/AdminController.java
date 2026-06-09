@@ -2,7 +2,10 @@ package com.backend.clinic.Controller;
 
 import com.backend.clinic.Entity.*;
 import com.backend.clinic.Repository.*;
+import com.backend.clinic.Service.ClinicManagementService;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -12,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -25,6 +29,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
+    private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
 
     private final UserRepository userRepository;
     private final DoctorRepository doctorRepository;
@@ -35,6 +40,7 @@ public class AdminController {
     private final RoleRepository roleRepository;
     private final SpecialtyRepository specialtyRepository;
     private final InvoiceRepository invoiceRepository;
+    private final ClinicManagementService clinicManagementService;
     private final PasswordEncoder passwordEncoder;
 
     @GetMapping("/users")
@@ -48,7 +54,8 @@ public class AdminController {
             var userList = userRepository.searchUsers(keyword);
             int start = (int) pageable.getOffset();
             int end = Math.min(start + pageable.getPageSize(), userList.size());
-            var subList = start >= userList.size() ? java.util.Collections.<User>emptyList() : userList.subList(start, end);
+            var subList = start >= userList.size() ? java.util.Collections.<User>emptyList()
+                    : userList.subList(start, end);
             users = new org.springframework.data.domain.PageImpl<>(subList, pageable, userList.size());
         } else {
             users = userRepository.findAll(pageable);
@@ -164,9 +171,12 @@ public class AdminController {
         String fullName = (String) body.get("fullName");
         String phone = (String) body.get("phone");
 
-        if (email != null) user.setEmail(email);
-        if (fullName != null) user.setFullName(fullName);
-        if (phone != null) user.setPhone(phone);
+        if (email != null)
+            user.setEmail(email);
+        if (fullName != null)
+            user.setFullName(fullName);
+        if (phone != null)
+            user.setPhone(phone);
 
         // Support both roleId and roleCode for compatibility
         if (body.containsKey("roleId") && body.get("roleId") != null) {
@@ -289,14 +299,16 @@ public class AdminController {
             @RequestParam(required = false) Long doctorId,
             @RequestParam(required = false) String keyword) {
         var normalizedStatus = normalizeAppointmentStatus(status);
-        var all = appointmentRepository.findAll(Sort.by("appointmentDate").descending().and(Sort.by("appointmentTime").descending()));
+        var all = appointmentRepository
+                .findAll(Sort.by("appointmentDate").descending().and(Sort.by("appointmentTime").descending()));
         var result = all.stream()
                 .filter(a -> date == null || a.getAppointmentDate().equals(date))
                 .filter(a -> normalizedStatus == null || a.getStatus().equals(normalizedStatus))
                 .filter(a -> doctorId == null || a.getDoctor().getDoctorId().equals(doctorId))
                 .filter(a -> keyword == null || keyword.isBlank()
                         || a.getAppointmentCode().toLowerCase().contains(keyword.toLowerCase())
-                        || (a.getPatient() != null && a.getPatient().getUser().getFullName().toLowerCase().contains(keyword.toLowerCase()))
+                        || (a.getPatient() != null
+                                && a.getPatient().getUser().getFullName().toLowerCase().contains(keyword.toLowerCase()))
                         || a.getDoctor().getUser().getFullName().toLowerCase().contains(keyword.toLowerCase()))
                 .map(a -> {
                     var m = new LinkedHashMap<String, Object>();
@@ -338,12 +350,13 @@ public class AdminController {
         if (fullName == null || fullName.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Họ tên không được để trống"));
         }
-        String baseEmail = (email != null && !email.isBlank()) ? email : "bn" + System.currentTimeMillis() + "@clinic.com";
+        String baseEmail = (email != null && !email.isBlank()) ? email
+                : "bn" + System.currentTimeMillis() + "@clinic.com";
 
         Role patientRole = roleRepository.findByRoleCode("PATIENT").orElse(null);
-        String username = "bn" + (100000 + (int)(Math.random() * 900000));
+        String username = "bn" + (100000 + (int) (Math.random() * 900000));
         while (userRepository.findByUsername(username).isPresent()) {
-            username = "bn" + (100000 + (int)(Math.random() * 900000));
+            username = "bn" + (100000 + (int) (Math.random() * 900000));
         }
 
         User user = User.builder()
@@ -357,7 +370,7 @@ public class AdminController {
                 .build();
         user = userRepository.save(user);
 
-        String patientCode = "BN" + (100000 + (int)(Math.random() * 900000));
+        String patientCode = "BN" + (100000 + (int) (Math.random() * 900000));
         Patient patient = Patient.builder()
                 .user(user)
                 .patientCode(patientCode)
@@ -375,22 +388,31 @@ public class AdminController {
     @PutMapping("/patients/{id}")
     public ResponseEntity<?> updatePatient(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         Patient patient = patientRepository.findById(id).orElse(null);
-        if (patient == null) return ResponseEntity.notFound().build();
+        if (patient == null)
+            return ResponseEntity.notFound().build();
 
         User user = patient.getUser();
         String fullName = (String) body.get("fullName");
         String email = (String) body.get("email");
         String phone = (String) body.get("phone");
-        if (fullName != null) user.setFullName(fullName);
-        if (email != null) user.setEmail(email);
-        if (phone != null) user.setPhone(phone);
+        if (fullName != null)
+            user.setFullName(fullName);
+        if (email != null)
+            user.setEmail(email);
+        if (phone != null)
+            user.setPhone(phone);
         userRepository.save(user);
 
-        if (body.containsKey("bloodType")) patient.setBloodType((String) body.get("bloodType"));
-        if (body.containsKey("insuranceNumber")) patient.setInsuranceNumber((String) body.get("insuranceNumber"));
-        if (body.containsKey("emergencyContact")) patient.setEmergencyContact((String) body.get("emergencyContact"));
-        if (body.containsKey("emergencyPhone")) patient.setEmergencyPhone((String) body.get("emergencyPhone"));
-        if (body.containsKey("medicalHistory")) patient.setMedicalHistory((String) body.get("medicalHistory"));
+        if (body.containsKey("bloodType"))
+            patient.setBloodType((String) body.get("bloodType"));
+        if (body.containsKey("insuranceNumber"))
+            patient.setInsuranceNumber((String) body.get("insuranceNumber"));
+        if (body.containsKey("emergencyContact"))
+            patient.setEmergencyContact((String) body.get("emergencyContact"));
+        if (body.containsKey("emergencyPhone"))
+            patient.setEmergencyPhone((String) body.get("emergencyPhone"));
+        if (body.containsKey("medicalHistory"))
+            patient.setMedicalHistory((String) body.get("medicalHistory"));
         patientRepository.save(patient);
 
         return ResponseEntity.ok(patient);
@@ -399,7 +421,8 @@ public class AdminController {
     @DeleteMapping("/patients/{id}")
     public ResponseEntity<?> deletePatient(@PathVariable Long id) {
         Patient patient = patientRepository.findById(id).orElse(null);
-        if (patient == null) return ResponseEntity.notFound().build();
+        if (patient == null)
+            return ResponseEntity.notFound().build();
         User user = patient.getUser();
         patientRepository.delete(patient);
         user.setDeletedAt(java.time.LocalDateTime.now());
@@ -419,12 +442,13 @@ public class AdminController {
         if (fullName == null || fullName.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Họ tên không được để trống"));
         }
-        String baseEmail = (email != null && !email.isBlank()) ? email : "bs" + System.currentTimeMillis() + "@clinic.com";
+        String baseEmail = (email != null && !email.isBlank()) ? email
+                : "bs" + System.currentTimeMillis() + "@clinic.com";
 
         Role doctorRole = roleRepository.findByRoleCode("DOCTOR").orElse(null);
-        String username = "bs" + (100000 + (int)(Math.random() * 900000));
+        String username = "bs" + (100000 + (int) (Math.random() * 900000));
         while (userRepository.findByUsername(username).isPresent()) {
-            username = "bs" + (100000 + (int)(Math.random() * 900000));
+            username = "bs" + (100000 + (int) (Math.random() * 900000));
         }
 
         User user = User.builder()
@@ -449,8 +473,11 @@ public class AdminController {
                 .licenseNumber((String) body.get("licenseNumber"))
                 .title((String) body.get("title"))
                 .biography((String) body.get("biography"))
-                .experienceYears(body.get("experienceYears") != null ? ((Number) body.get("experienceYears")).intValue() : 0)
-                .consultationFee(body.get("consultationFee") != null ? new java.math.BigDecimal(body.get("consultationFee").toString()) : new java.math.BigDecimal("150000"))
+                .experienceYears(
+                        body.get("experienceYears") != null ? ((Number) body.get("experienceYears")).intValue() : 0)
+                .consultationFee(body.get("consultationFee") != null
+                        ? new java.math.BigDecimal(body.get("consultationFee").toString())
+                        : new java.math.BigDecimal("150000"))
                 .build();
         doctor = doctorRepository.save(doctor);
 
@@ -460,22 +487,31 @@ public class AdminController {
     @PutMapping("/doctors/{id}")
     public ResponseEntity<?> updateDoctor(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         Doctor doctor = doctorRepository.findById(id).orElse(null);
-        if (doctor == null) return ResponseEntity.notFound().build();
+        if (doctor == null)
+            return ResponseEntity.notFound().build();
 
         User user = doctor.getUser();
         String fullName = (String) body.get("fullName");
         String email = (String) body.get("email");
         String phone = (String) body.get("phone");
-        if (fullName != null) user.setFullName(fullName);
-        if (email != null) user.setEmail(email);
-        if (phone != null) user.setPhone(phone);
+        if (fullName != null)
+            user.setFullName(fullName);
+        if (email != null)
+            user.setEmail(email);
+        if (phone != null)
+            user.setPhone(phone);
         userRepository.save(user);
 
-        if (body.containsKey("licenseNumber")) doctor.setLicenseNumber((String) body.get("licenseNumber"));
-        if (body.containsKey("title")) doctor.setTitle((String) body.get("title"));
-        if (body.containsKey("biography")) doctor.setBiography((String) body.get("biography"));
-        if (body.containsKey("experienceYears")) doctor.setExperienceYears(((Number) body.get("experienceYears")).intValue());
-        if (body.containsKey("consultationFee")) doctor.setConsultationFee(new java.math.BigDecimal(body.get("consultationFee").toString()));
+        if (body.containsKey("licenseNumber"))
+            doctor.setLicenseNumber((String) body.get("licenseNumber"));
+        if (body.containsKey("title"))
+            doctor.setTitle((String) body.get("title"));
+        if (body.containsKey("biography"))
+            doctor.setBiography((String) body.get("biography"));
+        if (body.containsKey("experienceYears"))
+            doctor.setExperienceYears(((Number) body.get("experienceYears")).intValue());
+        if (body.containsKey("consultationFee"))
+            doctor.setConsultationFee(new java.math.BigDecimal(body.get("consultationFee").toString()));
         if (body.containsKey("specialtyId")) {
             Integer specId = ((Number) body.get("specialtyId")).intValue();
             doctor.setSpecialty(specialtyRepository.findById(specId).orElse(null));
@@ -488,7 +524,8 @@ public class AdminController {
     @DeleteMapping("/doctors/{id}")
     public ResponseEntity<?> deleteDoctor(@PathVariable Long id) {
         Doctor doctor = doctorRepository.findById(id).orElse(null);
-        if (doctor == null) return ResponseEntity.notFound().build();
+        if (doctor == null)
+            return ResponseEntity.notFound().build();
         User user = doctor.getUser();
         doctorRepository.delete(doctor);
         user.setDeletedAt(java.time.LocalDateTime.now());
@@ -496,7 +533,8 @@ public class AdminController {
         return ResponseEntity.ok(Map.of("message", "Đã xóa bác sĩ"));
     }
 
-    // ────────────────────────────── Appointments CRUD ──────────────────────────────
+    // ────────────────────────────── Appointments CRUD
+    // ──────────────────────────────
 
     @PostMapping("/appointments")
     public ResponseEntity<?> createAppointment(@RequestBody Map<String, Object> body) {
@@ -540,16 +578,23 @@ public class AdminController {
     @PutMapping("/appointments/{id}")
     public ResponseEntity<?> updateAppointment(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         Appointment appointment = appointmentRepository.findById(id).orElse(null);
-        if (appointment == null) return ResponseEntity.notFound().build();
+        if (appointment == null)
+            return ResponseEntity.notFound().build();
 
-        if (body.containsKey("status")) appointment.setStatus(normalizeAppointmentStatus((String) body.get("status")));
-        if (body.containsKey("cancelReason")) appointment.setCancelReason((String) body.get("cancelReason"));
-        if (body.containsKey("reason")) appointment.setReason((String) body.get("reason"));
-        if (body.containsKey("appointmentDate")) appointment.setAppointmentDate(java.time.LocalDate.parse((String) body.get("appointmentDate")));
-        if (body.containsKey("appointmentTime")) appointment.setAppointmentTime(java.time.LocalTime.parse((String) body.get("appointmentTime")));
+        if (body.containsKey("status"))
+            appointment.setStatus(normalizeAppointmentStatus((String) body.get("status")));
+        if (body.containsKey("cancelReason"))
+            appointment.setCancelReason((String) body.get("cancelReason"));
+        if (body.containsKey("reason"))
+            appointment.setReason((String) body.get("reason"));
+        if (body.containsKey("appointmentDate"))
+            appointment.setAppointmentDate(java.time.LocalDate.parse((String) body.get("appointmentDate")));
+        if (body.containsKey("appointmentTime"))
+            appointment.setAppointmentTime(java.time.LocalTime.parse((String) body.get("appointmentTime")));
         if (body.containsKey("doctorId")) {
             Doctor doc = doctorRepository.findById(((Number) body.get("doctorId")).longValue()).orElse(null);
-            if (doc != null) appointment.setDoctor(doc);
+            if (doc != null)
+                appointment.setDoctor(doc);
         }
         appointmentRepository.save(appointment);
 
@@ -558,7 +603,8 @@ public class AdminController {
 
     @DeleteMapping("/appointments/{id}")
     public ResponseEntity<?> deleteAppointment(@PathVariable Long id) {
-        if (!appointmentRepository.existsById(id)) return ResponseEntity.notFound().build();
+        if (!appointmentRepository.existsById(id))
+            return ResponseEntity.notFound().build();
         appointmentRepository.deleteById(id);
         return ResponseEntity.ok(Map.of("message", "Đã xóa lịch hẹn"));
     }
@@ -571,7 +617,8 @@ public class AdminController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(required = false) String status) {
         List<DoctorSchedule> schedules = doctorScheduleRepository.searchAssignments(
-                doctorId, roomId, startDate, endDate, status != null && !status.isBlank() ? status.trim().toUpperCase() : null);
+                doctorId, roomId, startDate, endDate,
+                status != null && !status.isBlank() ? status.trim().toUpperCase() : null);
 
         var result = schedules.stream().map(s -> {
             var m = new LinkedHashMap<String, Object>();
@@ -595,16 +642,59 @@ public class AdminController {
 
     @PostMapping("/doctor-schedules")
     public ResponseEntity<?> createDoctorSchedule(@RequestBody Map<String, Object> body) {
-        Long doctorId = body.get("doctorId") != null ? ((Number) body.get("doctorId")).longValue() : null;
-        Long roomId = body.get("roomId") != null ? ((Number) body.get("roomId")).longValue() : null;
+        logger.info("=== createDoctorSchedule called with body: {}", body);
+
+        Long doctorId = null;
+        Long roomId = null;
+
+        // Parse doctorId - có thể là Number hoặc String
+        if (body.get("doctorId") != null) {
+            Object docIdObj = body.get("doctorId");
+            if (docIdObj instanceof Number) {
+                doctorId = ((Number) docIdObj).longValue();
+            } else if (docIdObj instanceof String) {
+                try {
+                    doctorId = Long.parseLong((String) docIdObj);
+                } catch (NumberFormatException e) {
+                    logger.error("Failed to parse doctorId: {}", docIdObj);
+                    return ResponseEntity.badRequest()
+                            .body(Map.of("message", "doctorId không hợp lệ"));
+                }
+            }
+        }
+
+        // Parse roomId - có thể là Number hoặc String
+        if (body.get("roomId") != null) {
+            Object roomIdObj = body.get("roomId");
+            if (roomIdObj instanceof Number) {
+                roomId = ((Number) roomIdObj).longValue();
+            } else if (roomIdObj instanceof String && !((String) roomIdObj).isEmpty()) {
+                try {
+                    roomId = Long.parseLong((String) roomIdObj);
+                } catch (NumberFormatException e) {
+                    // Ignore invalid roomId, it's optional
+                }
+            }
+        }
+
         String workDate = (String) body.get("workDate");
         String shiftStart = (String) body.get("shiftStart");
         String shiftEnd = (String) body.get("shiftEnd");
-        Integer maxPatients = body.get("maxPatients") != null ? ((Number) body.get("maxPatients")).intValue() : 20;
-        String status = (String) body.get("status");
+
+        logger.info("Parsed: doctorId={}, roomId={}, workDate={}, shiftStart={}, shiftEnd={}",
+                doctorId, roomId, workDate, shiftStart, shiftEnd);
+
+        Integer maxPatients = parseMaxPatients(body.get("maxPatients"));
+        if (maxPatients == null) {
+            maxPatients = 20;
+        }
+        validateMaxPatients(maxPatients);
 
         if (doctorId == null || workDate == null || shiftStart == null || shiftEnd == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "doctorId, workDate, shiftStart và shiftEnd là bắt buộc"));
+            logger.error("Missing required fields: doctorId={}, workDate={}, shiftStart={}, shiftEnd={}",
+                    doctorId, workDate, shiftStart, shiftEnd);
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "doctorId, workDate, shiftStart và shiftEnd là bắt buộc"));
         }
 
         Doctor doctor = doctorRepository.findById(doctorId).orElse(null);
@@ -627,19 +717,21 @@ public class AdminController {
             date = LocalDate.parse(workDate);
             start = LocalTime.parse(shiftStart);
             end = LocalTime.parse(shiftEnd);
+            logger.info("Parsed dates/times: date={}, start={}, end={}", date, start, end);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", "workDate, shiftStart hoặc shiftEnd không đúng định dạng"));
+            logger.error("Failed to parse date/time: {}", e.getMessage());
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "workDate, shiftStart hoặc shiftEnd không đúng định dạng"));
         }
 
         if (!end.isAfter(start)) {
             return ResponseEntity.badRequest().body(Map.of("message", "shiftEnd phải sau shiftStart"));
         }
 
-        if (!doctorScheduleRepository.findDoctorOverlaps(doctorId, date, start, end, null).isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Bác sĩ đã có lịch trùng ca trong thời gian này"));
-        }
-        if (room != null && !doctorScheduleRepository.findRoomOverlaps(roomId, date, start, end, null).isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Phòng khám đã có lịch trùng ca trong thời gian này"));
+        try {
+            clinicManagementService.validateDoctorScheduleConflict(doctorId, roomId, date, start, end, null);
+        } catch (ResponseStatusException ex) {
+            return ResponseEntity.status(ex.getStatusCode()).body(Map.of("message", ex.getReason()));
         }
 
         DoctorSchedule schedule = DoctorSchedule.builder()
@@ -649,9 +741,14 @@ public class AdminController {
                 .shiftStart(start)
                 .shiftEnd(end)
                 .maxPatients(maxPatients)
-                .status(status != null && !status.isBlank() ? status.trim().toUpperCase() : "AVAILABLE")
                 .build();
         schedule = doctorScheduleRepository.save(schedule);
+        // compute and persist derived status
+        String derived = clinicManagementService.computeScheduleStatus(schedule);
+        if (derived != null && !derived.equals(schedule.getStatus())) {
+            schedule.setStatus(derived);
+            schedule = doctorScheduleRepository.save(schedule);
+        }
 
         var response = new LinkedHashMap<String, Object>();
         response.put("scheduleId", schedule.getScheduleId());
@@ -670,8 +767,160 @@ public class AdminController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @PutMapping("/doctor-schedules/{id}")
+    public ResponseEntity<?> updateDoctorSchedule(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        DoctorSchedule schedule = doctorScheduleRepository.findById(id).orElse(null);
+        if (schedule == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        LocalDate workDate = schedule.getWorkDate();
+        LocalTime shiftStart = schedule.getShiftStart();
+        LocalTime shiftEnd = schedule.getShiftEnd();
+        Long roomId = schedule.getClinicRoom() != null ? schedule.getClinicRoom().getRoomId() : null;
+        ClinicRoom room = schedule.getClinicRoom();
+
+        if (body.containsKey("workDate")) {
+            try {
+                workDate = LocalDate.parse((String) body.get("workDate"));
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(Map.of("message", "workDate không đúng định dạng"));
+            }
+        }
+        if (body.containsKey("shiftStart")) {
+            try {
+                shiftStart = LocalTime.parse((String) body.get("shiftStart"));
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(Map.of("message", "shiftStart không đúng định dạng"));
+            }
+        }
+        if (body.containsKey("shiftEnd")) {
+            try {
+                shiftEnd = LocalTime.parse((String) body.get("shiftEnd"));
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(Map.of("message", "shiftEnd không đúng định dạng"));
+            }
+        }
+        if (!shiftEnd.isAfter(shiftStart)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "shiftEnd phải sau shiftStart"));
+        }
+
+        if (body.containsKey("roomId")) {
+            Object roomIdObj = body.get("roomId");
+            if (roomIdObj instanceof Number) {
+                roomId = ((Number) roomIdObj).longValue();
+            } else if (roomIdObj instanceof String && !((String) roomIdObj).isBlank()) {
+                try {
+                    roomId = Long.parseLong((String) roomIdObj);
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            room = roomId != null && roomId > 0 ? clinicRoomRepository.findById(roomId).orElse(null) : null;
+            if (roomId != null && roomId > 0 && room == null) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Phòng khám không tồn tại"));
+            }
+        }
+
+        if (body.containsKey("roomId") || body.containsKey("workDate") || body.containsKey("shiftStart")
+                || body.containsKey("shiftEnd")) {
+            try {
+                clinicManagementService.validateDoctorScheduleConflict(schedule.getDoctor().getDoctorId(), roomId,
+                        workDate, shiftStart, shiftEnd, id);
+            } catch (ResponseStatusException ex) {
+                return ResponseEntity.status(ex.getStatusCode()).body(Map.of("message", ex.getReason()));
+            }
+        }
+
+        // status is derived automatically; ignore manual status changes
+        if (body.containsKey("maxPatients")) {
+            Integer maxPatients = parseMaxPatients(body.get("maxPatients"));
+            validateMaxPatients(maxPatients);
+            if (schedule.getBookedCount() != null && schedule.getBookedCount() > maxPatients) {
+                return ResponseEntity.badRequest().body(
+                        Map.of("message", "Số lượng bệnh nhân tối đa không thể nhỏ hơn số bệnh nhân đã đặt hiện tại"));
+            }
+            schedule.setMaxPatients(maxPatients);
+        }
+        if (body.containsKey("roomId")) {
+            schedule.setClinicRoom(room);
+        }
+        if (body.containsKey("workDate")) {
+            schedule.setWorkDate(workDate);
+        }
+        if (body.containsKey("shiftStart")) {
+            schedule.setShiftStart(shiftStart);
+        }
+        if (body.containsKey("shiftEnd")) {
+            schedule.setShiftEnd(shiftEnd);
+        }
+
+        schedule = doctorScheduleRepository.save(schedule);
+
+        // recompute derived status after update
+        String derived = clinicManagementService.computeScheduleStatus(schedule);
+        if (derived != null && !derived.equals(schedule.getStatus())) {
+            schedule.setStatus(derived);
+            schedule = doctorScheduleRepository.save(schedule);
+        }
+
+        var response = new LinkedHashMap<String, Object>();
+        response.put("scheduleId", schedule.getScheduleId());
+        response.put("doctorId", schedule.getDoctor().getDoctorId());
+        response.put("doctorName", schedule.getDoctor().getUser().getFullName());
+        response.put("roomId", schedule.getClinicRoom() != null ? schedule.getClinicRoom().getRoomId() : null);
+        response.put("roomName", schedule.getClinicRoom() != null ? schedule.getClinicRoom().getRoomName() : null);
+        response.put("workDate", schedule.getWorkDate().toString());
+        response.put("shiftStart", schedule.getShiftStart().toString());
+        response.put("shiftEnd", schedule.getShiftEnd().toString());
+        response.put("maxPatients", schedule.getMaxPatients());
+        response.put("bookedCount", schedule.getBookedCount());
+        response.put("status", schedule.getStatus());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/doctor-schedules/{id}")
+    public ResponseEntity<?> deleteDoctorSchedule(@PathVariable Long id) {
+        if (!doctorScheduleRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        doctorScheduleRepository.deleteById(id);
+        return ResponseEntity.ok(Map.of("message", "Đã xóa lịch khám"));
+    }
+
+    private Integer parseMaxPatients(Object maxPatientsValue) {
+        if (maxPatientsValue == null) {
+            return null;
+        }
+        if (maxPatientsValue instanceof Number) {
+            return ((Number) maxPatientsValue).intValue();
+        }
+        if (maxPatientsValue instanceof String) {
+            String trimmed = ((String) maxPatientsValue).trim();
+            if (trimmed.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "maxPatients không được để trống");
+            }
+            try {
+                return Integer.parseInt(trimmed);
+            } catch (NumberFormatException ex) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "maxPatients phải là số nguyên");
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "maxPatients không hợp lệ");
+    }
+
+    private void validateMaxPatients(Integer maxPatients) {
+        if (maxPatients == null) {
+            return;
+        }
+        if (maxPatients < 1 || maxPatients > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Số lượng bệnh nhân tối đa phải từ 1 đến 100");
+        }
+    }
+
     private String normalizeAppointmentStatus(String status) {
-        if (status == null || status.isBlank()) return null;
+        if (status == null || status.isBlank())
+            return null;
         switch (status.trim().toUpperCase()) {
             case "SCHEDULED":
                 return "PENDING";
@@ -686,8 +935,7 @@ public class AdminController {
         var result = specialties.stream().map(s -> Map.of(
                 "specialtyId", s.getSpecialtyId(),
                 "specialtyCode", s.getSpecialtyCode(),
-                "specialtyName", s.getSpecialtyName()
-        )).toList();
+                "specialtyName", s.getSpecialtyName())).toList();
         return ResponseEntity.ok(result);
     }
 
@@ -697,8 +945,7 @@ public class AdminController {
         var result = roles.stream().map(r -> Map.of(
                 "roleId", r.getRoleId(),
                 "roleCode", r.getRoleCode(),
-                "roleName", r.getRoleName()
-        )).toList();
+                "roleName", r.getRoleName())).toList();
         return ResponseEntity.ok(result);
     }
 
@@ -719,7 +966,8 @@ public class AdminController {
                     .add(inv.getMedicationFee())
                     .add(inv.getOtherFee() != null ? inv.getOtherFee() : BigDecimal.ZERO)
                     .subtract(inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO);
-            if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
+            if (total.compareTo(BigDecimal.ZERO) < 0)
+                total = BigDecimal.ZERO;
 
             var m = new LinkedHashMap<String, Object>();
             m.put("invoiceId", inv.getInvoiceId());
@@ -746,5 +994,169 @@ public class AdminController {
             return m;
         });
         return ResponseEntity.ok(result);
+    }
+
+    // ────────────────────────────── Clinic Rooms CRUD
+    // ──────────────────────────────
+
+    @GetMapping("/rooms")
+    public ResponseEntity<?> listRooms(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status) {
+        var rooms = clinicRoomRepository.searchRooms(keyword, status);
+        var result = rooms.stream().map(r -> {
+            var m = new LinkedHashMap<String, Object>();
+            m.put("roomId", r.getRoomId());
+            m.put("roomCode", r.getRoomCode());
+            m.put("roomName", r.getRoomName());
+            m.put("location", r.getLocation());
+            m.put("floor", r.getFloor());
+            m.put("specialtyId", r.getSpecialty() != null ? r.getSpecialty().getSpecialtyId() : null);
+            m.put("specialtyName", r.getSpecialty() != null ? r.getSpecialty().getSpecialtyName() : null);
+            m.put("capacity", r.getCapacity());
+            m.put("description", r.getDescription());
+            m.put("status", r.getStatus());
+            m.put("createdAt", r.getCreatedAt());
+            m.put("updatedAt", r.getUpdatedAt());
+            return m;
+        }).toList();
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/rooms/{id}")
+    public ResponseEntity<?> getRoom(@PathVariable Long id) {
+        return clinicRoomRepository.findById(id)
+                .map(r -> {
+                    var m = new LinkedHashMap<String, Object>();
+                    m.put("roomId", r.getRoomId());
+                    m.put("roomCode", r.getRoomCode());
+                    m.put("roomName", r.getRoomName());
+                    m.put("location", r.getLocation());
+                    m.put("floor", r.getFloor());
+                    m.put("specialtyId", r.getSpecialty() != null ? r.getSpecialty().getSpecialtyId() : null);
+                    m.put("specialtyName", r.getSpecialty() != null ? r.getSpecialty().getSpecialtyName() : null);
+                    m.put("capacity", r.getCapacity());
+                    m.put("description", r.getDescription());
+                    m.put("status", r.getStatus());
+                    m.put("createdAt", r.getCreatedAt());
+                    m.put("updatedAt", r.getUpdatedAt());
+                    return ResponseEntity.ok(m);
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/rooms")
+    public ResponseEntity<?> createRoom(@RequestBody Map<String, Object> body) {
+        String roomCode = (String) body.get("roomCode");
+        String roomName = (String) body.get("roomName");
+
+        if (roomCode == null || roomCode.isBlank() || roomName == null || roomName.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Mã phòng và tên phòng không được để trống"));
+        }
+
+        if (clinicRoomRepository.findByRoomCode(roomCode).isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Mã phòng đã tồn tại"));
+        }
+
+        Integer specialtyId = body.get("specialtyId") != null ? ((Number) body.get("specialtyId")).intValue() : null;
+        Specialty specialty = specialtyId != null ? specialtyRepository.findById(specialtyId).orElse(null) : null;
+
+        Integer capacity = body.get("capacity") != null ? ((Number) body.get("capacity")).intValue() : 1;
+        if (capacity < 1)
+            capacity = 1;
+
+        ClinicRoom room = ClinicRoom.builder()
+                .roomCode(roomCode.trim())
+                .roomName(roomName.trim())
+                .location((String) body.get("location"))
+                .floor(body.get("floor") != null ? ((Number) body.get("floor")).intValue() : null)
+                .specialty(specialty)
+                .capacity(capacity)
+                .description((String) body.get("description"))
+                .status(body.get("status") != null ? (String) body.get("status") : "ACTIVE")
+                .build();
+        room = clinicRoomRepository.save(room);
+
+        var response = new LinkedHashMap<String, Object>();
+        response.put("roomId", room.getRoomId());
+        response.put("roomCode", room.getRoomCode());
+        response.put("roomName", room.getRoomName());
+        response.put("location", room.getLocation());
+        response.put("floor", room.getFloor());
+        response.put("specialtyId", room.getSpecialty() != null ? room.getSpecialty().getSpecialtyId() : null);
+        response.put("specialtyName", room.getSpecialty() != null ? room.getSpecialty().getSpecialtyName() : null);
+        response.put("capacity", room.getCapacity());
+        response.put("description", room.getDescription());
+        response.put("status", room.getStatus());
+        response.put("createdAt", room.getCreatedAt());
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    @PutMapping("/rooms/{id}")
+    public ResponseEntity<?> updateRoom(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        ClinicRoom room = clinicRoomRepository.findById(id).orElse(null);
+        if (room == null)
+            return ResponseEntity.notFound().build();
+
+        String roomCode = (String) body.get("roomCode");
+        if (roomCode != null && !roomCode.equals(room.getRoomCode())) {
+            if (clinicRoomRepository.findByRoomCode(roomCode).isPresent()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Mã phòng đã tồn tại"));
+            }
+            room.setRoomCode(roomCode.trim());
+        }
+
+        if (body.containsKey("roomName"))
+            room.setRoomName((String) body.get("roomName"));
+        if (body.containsKey("location"))
+            room.setLocation((String) body.get("location"));
+        if (body.containsKey("floor"))
+            room.setFloor(body.get("floor") != null ? ((Number) body.get("floor")).intValue() : null);
+        if (body.containsKey("capacity")) {
+            Integer capacity = ((Number) body.get("capacity")).intValue();
+            room.setCapacity(capacity >= 1 ? capacity : 1);
+        }
+        if (body.containsKey("description"))
+            room.setDescription((String) body.get("description"));
+        if (body.containsKey("status"))
+            room.setStatus((String) body.get("status"));
+        if (body.containsKey("specialtyId")) {
+            Integer specId = body.get("specialtyId") != null ? ((Number) body.get("specialtyId")).intValue() : null;
+            room.setSpecialty(specId != null ? specialtyRepository.findById(specId).orElse(null) : null);
+        }
+
+        room = clinicRoomRepository.save(room);
+
+        var response = new LinkedHashMap<String, Object>();
+        response.put("roomId", room.getRoomId());
+        response.put("roomCode", room.getRoomCode());
+        response.put("roomName", room.getRoomName());
+        response.put("location", room.getLocation());
+        response.put("floor", room.getFloor());
+        response.put("specialtyId", room.getSpecialty() != null ? room.getSpecialty().getSpecialtyId() : null);
+        response.put("specialtyName", room.getSpecialty() != null ? room.getSpecialty().getSpecialtyName() : null);
+        response.put("capacity", room.getCapacity());
+        response.put("description", room.getDescription());
+        response.put("status", room.getStatus());
+        response.put("updatedAt", room.getUpdatedAt());
+
+        return ResponseEntity.ok(response);
+    }
+
+    @DeleteMapping("/rooms/{id}")
+    public ResponseEntity<?> deleteRoom(@PathVariable Long id) {
+        ClinicRoom room = clinicRoomRepository.findById(id).orElse(null);
+        if (room == null)
+            return ResponseEntity.notFound().build();
+
+        // Check if room has active schedules
+        if (doctorScheduleRepository.existsByClinicRoom_RoomId(id)) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Không thể xóa phòng có lịch làm việc, vui lòng xóa lịch trước"));
+        }
+
+        clinicRoomRepository.delete(room);
+        return ResponseEntity.ok(Map.of("message", "Đã xóa phòng khám"));
     }
 }
