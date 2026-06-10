@@ -180,15 +180,26 @@ public class AppointmentController {
                 .filter(a -> a.getPatient() != null && a.getPatient().getPatientId().equals(patient.getPatientId()))
                 .collect(Collectors.toList());
 
-        return ResponseEntity.ok(appointments.stream().map(a -> Map.<String, Object>of(
-                "appointmentId", a.getAppointmentId(),
-                "appointmentCode", a.getAppointmentCode(),
-                "doctorName", a.getDoctor().getUser().getFullName(),
-                "specialty", a.getDoctor().getSpecialty().getSpecialtyName(),
-                "date", a.getAppointmentDate().toString(),
-                "time", a.getAppointmentTime().toString(),
-                "status", a.getStatus(),
-                "reason", a.getReason() != null ? a.getReason() : "")).collect(Collectors.toList()));
+        return ResponseEntity.ok(appointments.stream().map(a -> {
+            Map<String, Object> map = new java.util.HashMap<>();
+            map.put("appointmentId", a.getAppointmentId());
+            map.put("appointmentCode", a.getAppointmentCode());
+            map.put("doctorId", a.getDoctor().getDoctorId());
+            map.put("doctorName", a.getDoctor().getUser().getFullName());
+            map.put("specialty", a.getDoctor().getSpecialty().getSpecialtyName());
+            if (a.getSchedule() != null && a.getSchedule().getClinicRoom() != null) {
+                map.put("roomId", a.getSchedule().getClinicRoom().getRoomId());
+            }
+            Long recordId = medicalRecordRepository.findByAppointment_AppointmentId(a.getAppointmentId())
+                    .map(com.backend.clinic.Entity.MedicalRecord::getRecordId)
+                    .orElse(null);
+            map.put("recordId", recordId);
+            map.put("date", a.getAppointmentDate().toString());
+            map.put("time", a.getAppointmentTime().toString());
+            map.put("status", a.getStatus());
+            map.put("reason", a.getReason() != null ? a.getReason() : "");
+            return map;
+        }).collect(Collectors.toList()));
     }
 
     // ── DOCTOR: Xem danh sách lịch hẹn cần duyệt ───────────────────────────
