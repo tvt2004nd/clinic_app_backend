@@ -29,7 +29,7 @@ public class AppointmentController {
 
     @PostMapping
     public ResponseEntity<?> bookAppointment(@RequestBody Map<String, Object> body,
-                                              Authentication auth) {
+            Authentication auth) {
         try {
             String username = auth.getName();
             User user = userRepository.findByUsername(username)
@@ -62,11 +62,13 @@ public class AppointmentController {
             }
 
             // Check if another patient already booked this time slot
-            boolean exists = appointmentRepository.existsByDoctor_DoctorIdAndAppointmentDateAndAppointmentTimeAndStatusIn(
-                    doctorId, schedule.getWorkDate(), schedule.getShiftStart(),
-                    List.of("PENDING", "CONFIRMED"));
+            boolean exists = appointmentRepository
+                    .existsByDoctor_DoctorIdAndAppointmentDateAndAppointmentTimeAndStatusIn(
+                            doctorId, schedule.getWorkDate(), schedule.getShiftStart(),
+                            List.of("PENDING", "CONFIRMED"));
             if (exists) {
-                return ResponseEntity.badRequest().body(Map.of("message", "Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác"));
+                return ResponseEntity.badRequest()
+                        .body(Map.of("message", "Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác"));
             }
 
             String apptCode = "APT-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
@@ -95,8 +97,7 @@ public class AppointmentController {
                     "appointmentId", appointment.getAppointmentId(),
                     "appointmentCode", apptCode,
                     "status", "PENDING",
-                    "message", "Đặt lịch thành công! Vui lòng chờ bác sĩ xác nhận."
-            ));
+                    "message", "Đặt lịch thành công! Vui lòng chờ bác sĩ xác nhận."));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("message", e.getMessage()));
         }
@@ -109,7 +110,8 @@ public class AppointmentController {
         User user = userRepository.findByUsername(username).orElseThrow();
         Patient patient = patientRepository.findByUser_UserId(user.getUserId()).orElse(null);
 
-        if (patient == null) return ResponseEntity.ok(List.of());
+        if (patient == null)
+            return ResponseEntity.ok(List.of());
 
         List<Appointment> appointments = appointmentRepository.searchQueue(null, null, null)
                 .stream()
@@ -124,15 +126,14 @@ public class AppointmentController {
                 "date", a.getAppointmentDate().toString(),
                 "time", a.getAppointmentTime().toString(),
                 "status", a.getStatus(),
-                "reason", a.getReason() != null ? a.getReason() : ""
-        )).collect(Collectors.toList()));
+                "reason", a.getReason() != null ? a.getReason() : "")).collect(Collectors.toList()));
     }
 
     // ── DOCTOR: Xem danh sách lịch hẹn cần duyệt ───────────────────────────
     @GetMapping("/doctor")
     public ResponseEntity<?> getDoctorAppointments(@RequestParam(required = false) String status,
-                                                   @RequestParam(required = false) String date,
-                                                   Authentication auth) {
+            @RequestParam(required = false) String date,
+            Authentication auth) {
         String username = auth.getName();
         User user = userRepository.findByUsername(username).orElseThrow();
         Doctor doctor = doctorRepository.findByUser_UserId(user.getUserId())
@@ -140,8 +141,7 @@ public class AppointmentController {
 
         LocalDate localDate = date != null ? LocalDate.parse(date) : null;
         List<Appointment> appointments = appointmentRepository.searchQueue(
-                doctor.getDoctorId(), localDate, status
-        );
+                doctor.getDoctorId(), localDate, status);
 
         return ResponseEntity.ok(appointments.stream()
                 .filter(a -> a.getPatient() != null)
@@ -155,7 +155,8 @@ public class AppointmentController {
                     map.put("appointmentCode", a.getAppointmentCode());
                     map.put("patientName", a.getPatient().getUser().getFullName());
                     map.put("patientPhone", a.getPatient().getUser().getPhone() != null
-                            ? a.getPatient().getUser().getPhone() : "");
+                            ? a.getPatient().getUser().getPhone()
+                            : "");
                     map.put("date", a.getAppointmentDate().toString());
                     map.put("time", a.getAppointmentTime().toString());
                     map.put("status", a.getStatus());
@@ -177,7 +178,9 @@ public class AppointmentController {
 
         appt.setStatus("CONFIRMED");
         appointmentRepository.save(appt);
-        conversationRepository.findByDoctor_DoctorIdAndPatient_PatientId(appt.getDoctor().getDoctorId(), appt.getPatient().getPatientId())
+        conversationRepository
+                .findByDoctor_DoctorIdAndPatient_PatientId(appt.getDoctor().getDoctorId(),
+                        appt.getPatient().getPatientId())
                 .orElseGet(() -> conversationRepository.save(Conversation.builder()
                         .doctor(appt.getDoctor())
                         .patient(appt.getPatient())
@@ -212,7 +215,7 @@ public class AppointmentController {
     // ── DOCTOR / PATIENT: Hủy lịch hẹn ────────────────────────────────────
     @PutMapping("/{id}/cancel")
     public ResponseEntity<?> cancelAppointment(@PathVariable Long id,
-                                                @RequestBody(required = false) Map<String, Object> body) {
+            @RequestBody(required = false) Map<String, Object> body) {
         Appointment appt = appointmentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy lịch hẹn"));
 

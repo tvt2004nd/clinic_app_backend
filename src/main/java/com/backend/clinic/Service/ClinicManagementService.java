@@ -39,7 +39,8 @@ public class ClinicManagementService {
 
     @Transactional(readOnly = true)
     public List<ClinicManagementDTOs.ClinicRoomResponse> searchRooms(String keyword, String status) {
-        return clinicRoomRepository.searchRooms(normalizeKeyword(keyword), normalizeOptionalStatus(status, ROOM_STATUSES))
+        return clinicRoomRepository
+                .searchRooms(normalizeKeyword(keyword), normalizeOptionalStatus(status, ROOM_STATUSES))
                 .stream()
                 .map(this::mapRoom)
                 .toList();
@@ -71,7 +72,7 @@ public class ClinicManagementService {
     }
 
     public ClinicManagementDTOs.ClinicRoomResponse updateRoom(Long roomId,
-                                                              ClinicManagementDTOs.RoomUpsertRequest request) {
+            ClinicManagementDTOs.RoomUpsertRequest request) {
         ClinicRoom room = getRoomEntity(roomId);
         String roomCode = normalizeCode(request.getRoomCode());
 
@@ -106,26 +107,64 @@ public class ClinicManagementService {
 
     @Transactional(readOnly = true)
     public List<ClinicManagementDTOs.DoctorAssignmentResponse> searchAssignments(Long doctorId,
-                                                                                 Long roomId,
-                                                                                 LocalDate startDate,
-                                                                                 LocalDate endDate,
-                                                                                 String status) {
+            Long roomId,
+            LocalDate startDate,
+            LocalDate endDate,
+            String status) {
         if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "End date cannot be before start date");
         }
 
         return doctorScheduleRepository.searchAssignments(
-                        doctorId,
-                        roomId,
-                        startDate,
-                        endDate,
-                        normalizeOptionalStatus(status, SCHEDULE_STATUSES)
-                ).stream()
+                doctorId,
+                roomId,
+                startDate,
+                endDate,
+                normalizeOptionalStatus(status, SCHEDULE_STATUSES)).stream()
                 .map(this::mapAssignment)
                 .toList();
     }
 
-    public ClinicManagementDTOs.DoctorAssignmentResponse assignDoctor(ClinicManagementDTOs.DoctorAssignmentRequest request) {
+    public void validateDoctorScheduleConflict(Long doctorId,
+            Long roomId,
+            LocalDate workDate,
+            LocalTime shiftStart,
+            LocalTime shiftEnd,
+            Long excludedScheduleId) {
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bác sĩ không tồn tại"));
+        ClinicRoom room = null;
+        if (roomId != null) {
+            room = getRoomEntity(roomId);
+        }
+        validateNoOverlaps(doctor, room, workDate, shiftStart, shiftEnd, excludedScheduleId);
+    }
+
+    @Transactional(readOnly = true)
+    public ClinicManagementDTOs.ScheduleConflictResponse checkDoctorScheduleConflict(Long doctorId,
+            LocalDate workDate,
+            LocalTime shiftStart,
+            LocalTime shiftEnd,
+            Long excludedScheduleId) {
+        Doctor doctor = doctorRepository.findById(doctorId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bác sĩ không tồn tại"));
+
+        List<DoctorSchedule> overlaps = doctorScheduleRepository.findDoctorOverlaps(
+                doctor.getDoctorId(),
+                workDate,
+                shiftStart,
+                shiftEnd,
+                excludedScheduleId);
+
+        DoctorSchedule existingSchedule = overlaps.isEmpty() ? null : overlaps.get(0);
+        return ClinicManagementDTOs.ScheduleConflictResponse.builder()
+                .conflict(existingSchedule != null)
+                .existingSchedule(existingSchedule != null ? mapAssignment(existingSchedule) : null)
+                .build();
+    }
+
+    public ClinicManagementDTOs.DoctorAssignmentResponse assignDoctor(
+            ClinicManagementDTOs.DoctorAssignmentRequest request) {
         DoctorSchedule schedule = new DoctorSchedule();
         schedule.setBookedCount(0);
         applyAssignment(schedule, request, null);
@@ -133,7 +172,7 @@ public class ClinicManagementService {
     }
 
     public ClinicManagementDTOs.DoctorAssignmentResponse updateAssignment(Long scheduleId,
-                                                                          ClinicManagementDTOs.DoctorAssignmentRequest request) {
+            ClinicManagementDTOs.DoctorAssignmentRequest request) {
         DoctorSchedule schedule = doctorScheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Assignment not found"));
         applyAssignment(schedule, request, scheduleId);
@@ -168,26 +207,27 @@ public class ClinicManagementService {
     }
 
     private void applyAssignment(DoctorSchedule schedule,
-                                 ClinicManagementDTOs.DoctorAssignmentRequest request,
-                                 Long excludedScheduleId) {
+            ClinicManagementDTOs.DoctorAssignmentRequest request,
+            Long excludedScheduleId) {
         validateShift(request.getShiftStart(), request.getShiftEnd());
 
         Doctor doctor = doctorRepository.findById(request.getDoctorId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Doctor not found"));
         ClinicRoom room = getRoomEntity(request.getRoomId());
-        String status = normalizeStatus(request.getStatus(), SCHEDULE_STATUSES,
-                schedule.getStatus() != null ? schedule.getStatus() : "AVAILABLE");
+        // Do not accept manual status from requests here. Status is derived
+        // automatically.
         int maxPatients = request.getMaxPatients() != null ? request.getMaxPatients() : 20;
         int bookedCount = schedule.getBookedCount() != null ? schedule.getBookedCount() : 0;
 
         if (bookedCount > maxPatients) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Max patients cannot be lower than booked count");
         }
-        if (!"ACTIVE".equals(room.getStatus()) && !"OFF".equals(status) && !"CANCELLED".equals(status)) {
+        if (!"ACTIVE".equals(room.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Room must be ACTIVE before assigning doctors");
         }
 
-        validateNoOverlaps(doctor, room, request.getWorkDate(), request.getShiftStart(), request.getShiftEnd(), excludedScheduleId);
+        validateNoOverlaps(doctor, room, request.getWorkDate(), request.getShiftStart(), request.getShiftEnd(),
+                excludedScheduleId);
 
         schedule.setDoctor(doctor);
         schedule.setClinicRoom(room);
@@ -195,33 +235,70 @@ public class ClinicManagementService {
         schedule.setShiftStart(request.getShiftStart());
         schedule.setShiftEnd(request.getShiftEnd());
         schedule.setMaxPatients(maxPatients);
-        schedule.setStatus(bookedCount >= maxPatients && "AVAILABLE".equals(status) ? "FULL" : status);
+        // derive status based on current data
+        schedule.setStatus(computeScheduleStatus(schedule));
+    }
+
+    public String computeScheduleStatus(DoctorSchedule schedule) {
+        if (schedule == null)
+            return null;
+        String current = schedule.getStatus();
+        if ("CANCELLED".equalsIgnoreCase(current)) {
+            return "CANCELLED";
+        }
+        int booked = schedule.getBookedCount() != null ? schedule.getBookedCount() : 0;
+        int max = schedule.getMaxPatients() != null ? schedule.getMaxPatients() : 20;
+
+        // If schedule time is in the past, mark as COMPLETED
+        java.time.LocalDate nowDate = java.time.LocalDate.now();
+        java.time.LocalTime nowTime = java.time.LocalTime.now();
+        if (schedule.getWorkDate() != null && schedule.getShiftEnd() != null) {
+            if (schedule.getWorkDate().isBefore(nowDate)
+                    || (schedule.getWorkDate().isEqual(nowDate) && nowTime.isAfter(schedule.getShiftEnd()))) {
+                return "COMPLETED";
+            }
+        }
+
+        if (booked >= max)
+            return "FULL";
+        return "AVAILABLE";
     }
 
     private void validateNoOverlaps(Doctor doctor,
-                                    ClinicRoom room,
-                                    LocalDate workDate,
-                                    LocalTime shiftStart,
-                                    LocalTime shiftEnd,
-                                    Long excludedScheduleId) {
+            ClinicRoom room,
+            LocalDate workDate,
+            LocalTime shiftStart,
+            LocalTime shiftEnd,
+            Long excludedScheduleId) {
+        if (room != null && !doctorScheduleRepository.findDoctorRoomOverlaps(
+                doctor.getDoctorId(),
+                room.getRoomId(),
+                workDate,
+                shiftStart,
+                shiftEnd,
+                excludedScheduleId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Bác sĩ đã được phân công tại phòng khác trong khoảng thời gian này.");
+        }
+
         if (!doctorScheduleRepository.findDoctorOverlaps(
                 doctor.getDoctorId(),
                 workDate,
                 shiftStart,
                 shiftEnd,
-                excludedScheduleId
-        ).isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Doctor already has an overlapping assignment");
+                excludedScheduleId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Bác sĩ đã có lịch khám trong khoảng thời gian này.");
         }
 
-        if (!doctorScheduleRepository.findRoomOverlaps(
+        if (room != null && !doctorScheduleRepository.findRoomOverlaps(
                 room.getRoomId(),
                 workDate,
                 shiftStart,
                 shiftEnd,
-                excludedScheduleId
-        ).isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Room already has an overlapping assignment");
+                excludedScheduleId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Phòng khám đã có lịch trùng ca trong thời gian này.");
         }
     }
 
@@ -286,7 +363,7 @@ public class ClinicManagementService {
                 .shiftEnd(schedule.getShiftEnd())
                 .maxPatients(schedule.getMaxPatients())
                 .bookedCount(schedule.getBookedCount())
-                .status(schedule.getStatus())
+                .status(computeScheduleStatus(schedule))
                 .createdAt(schedule.getCreatedAt())
                 .build();
     }

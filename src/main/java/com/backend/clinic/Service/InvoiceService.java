@@ -35,260 +35,272 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class InvoiceService {
 
-    private final InvoiceRepository invoiceRepository;
-    private final MedicalRecordRepository medicalRecordRepository;
-    private final PrescriptionItemRepository prescriptionItemRepository;
-    private final PaymentRepository paymentRepository;
-    private final DoctorRepository doctorRepository;
-    private final PatientRepository patientRepository;
+        private final InvoiceRepository invoiceRepository;
+        private final MedicalRecordRepository medicalRecordRepository;
+        private final PrescriptionItemRepository prescriptionItemRepository;
+        private final PaymentRepository paymentRepository;
+        private final DoctorRepository doctorRepository;
+        private final PatientRepository patientRepository;
 
-    @Value("${stripe.secret-key}")
-    private String stripeSecretKey;
+        @Value("${stripe.secret-key}")
+        private String stripeSecretKey;
 
-    @PostConstruct
-    public void init() {
-        Stripe.apiKey = stripeSecretKey;
-    }
-
-    @Transactional
-    public InvoiceDTOs.InvoiceDetailResponse createInvoice(InvoiceDTOs.CreateInvoiceRequest request) {
-        MedicalRecord record = medicalRecordRepository.findById(request.getRecordId())
-                .orElseThrow(() -> new RuntimeException("Medical record not found"));
-
-        if (invoiceRepository.findByMedicalRecord_RecordId(record.getRecordId()).isPresent()) {
-            throw new RuntimeException("Invoice already exists for this medical record");
+        @PostConstruct
+        public void init() {
+                Stripe.apiKey = stripeSecretKey;
         }
 
-        List<PrescriptionItem> items = prescriptionItemRepository
-                .findByMedicalRecord_RecordId(record.getRecordId());
-        BigDecimal medFee = items.stream()
-                .map(item -> item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        @Transactional
+        public InvoiceDTOs.InvoiceDetailResponse createInvoice(InvoiceDTOs.CreateInvoiceRequest request) {
+                MedicalRecord record = medicalRecordRepository.findById(request.getRecordId())
+                                .orElseThrow(() -> new RuntimeException("Medical record not found"));
 
-        BigDecimal consultationFee = request.getConsultationFee() != null
-                ? request.getConsultationFee() : BigDecimal.valueOf(150000);
-        BigDecimal otherFee = request.getOtherFee() != null
-                ? request.getOtherFee() : BigDecimal.ZERO;
-        BigDecimal discount = request.getDiscount() != null
-                ? request.getDiscount() : BigDecimal.ZERO;
-
-        Invoice invoice = Invoice.builder()
-                .invoiceCode("INV-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
-                .medicalRecord(record)
-                .patient(record.getPatient())
-                .consultationFee(consultationFee)
-                .medicationFee(medFee)
-                .otherFee(otherFee)
-                .discount(discount)
-                .paymentStatus("UNPAID")
-                .build();
-
-        invoice = invoiceRepository.save(invoice);
-
-        BigDecimal total = consultationFee.add(medFee).add(otherFee).subtract(discount);
-        if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
-
-        return mapToResponse(invoice, total);
-    }
-
-    @Transactional(readOnly = true)
-    public List<InvoiceDTOs.DoctorInvoiceResponse> getDoctorInvoices(CustomUserDetails userDetails) {
-        Doctor doctor = doctorRepository.findByUser_UserId(userDetails.getUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
-                        "Current user is not linked to a doctor profile"));
-
-        List<Invoice> invoices = invoiceRepository
-                .findAllByMedicalRecord_Doctor_DoctorIdOrderByCreatedAtDesc(doctor.getDoctorId());
-
-        return invoices.stream()
-                .map(inv -> {
-                    BigDecimal total = inv.getConsultationFee()
-                            .add(inv.getMedicationFee())
-                            .add(inv.getOtherFee() != null ? inv.getOtherFee() : BigDecimal.ZERO)
-                            .subtract(inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO);
-                    if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
-
-                    String diagnosis = inv.getMedicalRecord().getFinalDiagnosis();
-                    if ((diagnosis == null || diagnosis.isBlank())
-                            && inv.getMedicalRecord().getFinalDisease() != null) {
-                        diagnosis = inv.getMedicalRecord().getFinalDisease().getDiseaseNameVi();
-                    }
-
-                    return InvoiceDTOs.DoctorInvoiceResponse.builder()
-                            .invoiceId(inv.getInvoiceId())
-                            .invoiceCode(inv.getInvoiceCode())
-                            .recordId(inv.getMedicalRecord().getRecordId())
-                            .patientId(inv.getPatient().getPatientId())
-                            .patientName(inv.getPatient().getUser().getFullName())
-                            .consultationFee(inv.getConsultationFee())
-                            .medicationFee(inv.getMedicationFee())
-                            .totalAmount(total)
-                            .paymentStatus(inv.getPaymentStatus())
-                            .recordDiagnosis(diagnosis)
-                            .createdAt(inv.getCreatedAt())
-                            .build();
-                })
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public List<InvoiceDTOs.PatientInvoiceResponse> getPatientInvoices(CustomUserDetails userDetails) {
-        Patient patient = patientRepository.findByUser_UserId(userDetails.getUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
-                        "Current user is not linked to a patient profile"));
-
-        List<Invoice> invoices = invoiceRepository
-                .findByPatient_PatientIdOrderByCreatedAtDesc(patient.getPatientId());
-
-        return invoices.stream()
-                .map(inv -> {
-                    BigDecimal total = inv.getConsultationFee()
-                            .add(inv.getMedicationFee())
-                            .add(inv.getOtherFee() != null ? inv.getOtherFee() : BigDecimal.ZERO)
-                            .subtract(inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO);
-                    if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
-
-                    String diagnosis = inv.getMedicalRecord().getFinalDiagnosis();
-                    if ((diagnosis == null || diagnosis.isBlank())
-                            && inv.getMedicalRecord().getFinalDisease() != null) {
-                        diagnosis = inv.getMedicalRecord().getFinalDisease().getDiseaseNameVi();
-                    }
-
-                    String doctorName = inv.getMedicalRecord().getDoctor() != null
-                            ? inv.getMedicalRecord().getDoctor().getUser().getFullName() : "";
-
-                    return InvoiceDTOs.PatientInvoiceResponse.builder()
-                            .invoiceId(inv.getInvoiceId())
-                            .invoiceCode(inv.getInvoiceCode())
-                            .doctorName(doctorName)
-                            .recordDiagnosis(diagnosis)
-                            .consultationFee(inv.getConsultationFee())
-                            .medicationFee(inv.getMedicationFee())
-                            .otherFee(inv.getOtherFee())
-                            .discount(inv.getDiscount())
-                            .totalAmount(total)
-                            .paymentStatus(inv.getPaymentStatus())
-                            .createdAt(inv.getCreatedAt())
-                            .build();
-                })
-                .toList();
-    }
-
-    @Transactional(readOnly = true)
-    public InvoiceDTOs.InvoiceDetailResponse getInvoiceByRecord(Long recordId) {
-        Invoice invoice = invoiceRepository.findByMedicalRecord_RecordId(recordId)
-                .orElseThrow(() -> new RuntimeException("Invoice not found for this record"));
-        return mapToResponse(invoice, invoice.getTotalAmount());
-    }
-
-    @Transactional
-    public InvoiceDTOs.CreatePaymentIntentResponse createPaymentIntent(Long invoiceId) {
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new RuntimeException("Invoice not found"));
-
-        if ("PAID".equals(invoice.getPaymentStatus())) {
-            throw new RuntimeException("Invoice is already paid");
-        }
-
-        if (invoice.getStripePaymentIntentId() != null) {
-            try {
-                PaymentIntent existing = PaymentIntent.retrieve(invoice.getStripePaymentIntentId());
-                return InvoiceDTOs.CreatePaymentIntentResponse.builder()
-                        .clientSecret(existing.getClientSecret())
-                        .invoiceId(invoiceId)
-                        .build();
-            } catch (StripeException e) {
-                // Intent expired or invalid, create new one
-            }
-        }
-
-        BigDecimal total = invoice.getConsultationFee()
-                .add(invoice.getMedicationFee())
-                .add(invoice.getOtherFee() != null ? invoice.getOtherFee() : BigDecimal.ZERO)
-                .subtract(invoice.getDiscount() != null ? invoice.getDiscount() : BigDecimal.ZERO);
-        if (total.compareTo(BigDecimal.ZERO) < 0) total = BigDecimal.ZERO;
-
-        try {
-            PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
-                    .setAmount(total.longValue())
-                    .setCurrency("vnd")
-                    .putMetadata("invoice_id", String.valueOf(invoiceId))
-                    .putMetadata("invoice_code", invoice.getInvoiceCode())
-                    .build();
-
-            PaymentIntent paymentIntent = PaymentIntent.create(params);
-
-            invoice.setStripePaymentIntentId(paymentIntent.getId());
-            invoiceRepository.save(invoice);
-
-            return InvoiceDTOs.CreatePaymentIntentResponse.builder()
-                    .clientSecret(paymentIntent.getClientSecret())
-                    .invoiceId(invoiceId)
-                    .build();
-        } catch (StripeException e) {
-            throw new RuntimeException("Failed to create Stripe PaymentIntent: " + e.getMessage());
-        }
-    }
-
-    @Transactional
-    public InvoiceDTOs.PaymentResponse payInvoice(Long invoiceId, InvoiceDTOs.PaymentRequest request) {
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new RuntimeException("Invoice not found"));
-
-        if ("PAID".equals(invoice.getPaymentStatus())) {
-            throw new RuntimeException("Invoice is already paid");
-        }
-
-        if (invoice.getStripePaymentIntentId() != null) {
-            try {
-                PaymentIntent paymentIntent = PaymentIntent.retrieve(invoice.getStripePaymentIntentId());
-                if (!"succeeded".equals(paymentIntent.getStatus())) {
-                    throw new RuntimeException("Payment has not been completed. Status: " + paymentIntent.getStatus());
+                if (invoiceRepository.findByMedicalRecord_RecordId(record.getRecordId()).isPresent()) {
+                        throw new RuntimeException("Invoice already exists for this medical record");
                 }
-            } catch (StripeException e) {
-                throw new RuntimeException("Failed to verify Stripe payment: " + e.getMessage());
-            }
+
+                List<PrescriptionItem> items = prescriptionItemRepository
+                                .findByMedicalRecord_RecordId(record.getRecordId());
+                BigDecimal medFee = items.stream()
+                                .map(item -> item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity())))
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal consultationFee = request.getConsultationFee() != null
+                                ? request.getConsultationFee()
+                                : BigDecimal.valueOf(150000);
+                BigDecimal otherFee = request.getOtherFee() != null
+                                ? request.getOtherFee()
+                                : BigDecimal.ZERO;
+                BigDecimal discount = request.getDiscount() != null
+                                ? request.getDiscount()
+                                : BigDecimal.ZERO;
+
+                BigDecimal total = consultationFee.add(medFee).add(otherFee).subtract(discount);
+                if (total.compareTo(BigDecimal.ZERO) < 0)
+                        total = BigDecimal.ZERO;
+
+                Invoice invoice = Invoice.builder()
+                                .invoiceCode("INV-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                                .medicalRecord(record)
+                                .patient(record.getPatient())
+                                .consultationFee(consultationFee)
+                                .medicationFee(medFee)
+                                .otherFee(otherFee)
+                                .discount(discount)
+                                .totalAmount(total)
+                                .paymentStatus("UNPAID")
+                                .build();
+
+                invoice = invoiceRepository.save(invoice);
+
+                return mapToResponse(invoice, total);
         }
 
-        Payment payment = Payment.builder()
-                .paymentCode("PAY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
-                .invoice(invoice)
-                .amount(request.getAmount())
-                .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod() : "CREDIT_CARD")
-                .transactionRef(request.getStripePaymentIntentId())
-                .status("SUCCESS")
-                .build();
+        @Transactional(readOnly = true)
+        public List<InvoiceDTOs.DoctorInvoiceResponse> getDoctorInvoices(CustomUserDetails userDetails) {
+                Doctor doctor = doctorRepository.findByUser_UserId(userDetails.getUserId())
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                                                "Current user is not linked to a doctor profile"));
 
-        payment = paymentRepository.save(payment);
+                List<Invoice> invoices = invoiceRepository
+                                .findAllByMedicalRecord_Doctor_DoctorIdOrderByCreatedAtDesc(doctor.getDoctorId());
 
-        invoice.setPaymentStatus("PAID");
-        invoiceRepository.save(invoice);
+                return invoices.stream()
+                                .map(inv -> {
+                                        BigDecimal total = computeTotal(inv);
 
-        return InvoiceDTOs.PaymentResponse.builder()
-                .paymentId(payment.getPaymentId())
-                .paymentCode(payment.getPaymentCode())
-                .amount(payment.getAmount())
-                .paymentMethod(payment.getPaymentMethod())
-                .status(payment.getStatus())
-                .paidAt(LocalDateTime.now())
-                .build();
-    }
+                                        String diagnosis = inv.getMedicalRecord().getFinalDiagnosis();
+                                        if ((diagnosis == null || diagnosis.isBlank())
+                                                        && inv.getMedicalRecord().getFinalDisease() != null) {
+                                                diagnosis = inv.getMedicalRecord().getFinalDisease().getDiseaseNameVi();
+                                        }
 
-    private InvoiceDTOs.InvoiceDetailResponse mapToResponse(Invoice invoice, BigDecimal calculatedTotal) {
-        return InvoiceDTOs.InvoiceDetailResponse.builder()
-                .invoiceId(invoice.getInvoiceId())
-                .invoiceCode(invoice.getInvoiceCode())
-                .recordId(invoice.getMedicalRecord().getRecordId())
-                .patientId(invoice.getPatient().getPatientId())
-                .patientName(invoice.getPatient().getUser() != null
-                        ? invoice.getPatient().getUser().getFullName() : "")
-                .consultationFee(invoice.getConsultationFee())
-                .medicationFee(invoice.getMedicationFee())
-                .otherFee(invoice.getOtherFee())
-                .discount(invoice.getDiscount())
-                .totalAmount(calculatedTotal != null ? calculatedTotal : invoice.getTotalAmount())
-                .paymentStatus(invoice.getPaymentStatus())
-                .createdAt(invoice.getCreatedAt())
-                .build();
-    }
+                                        return InvoiceDTOs.DoctorInvoiceResponse.builder()
+                                                        .invoiceId(inv.getInvoiceId())
+                                                        .invoiceCode(inv.getInvoiceCode())
+                                                        .recordId(inv.getMedicalRecord().getRecordId())
+                                                        .patientId(inv.getPatient().getPatientId())
+                                                        .patientName(inv.getPatient().getUser().getFullName())
+                                                        .consultationFee(inv.getConsultationFee())
+                                                        .medicationFee(inv.getMedicationFee())
+                                                        .totalAmount(total)
+                                                        .paymentStatus(inv.getPaymentStatus())
+                                                        .recordDiagnosis(diagnosis)
+                                                        .createdAt(inv.getCreatedAt())
+                                                        .build();
+                                })
+                                .toList();
+        }
+
+        @Transactional(readOnly = true)
+        public List<InvoiceDTOs.PatientInvoiceResponse> getPatientInvoices(CustomUserDetails userDetails) {
+                Patient patient = patientRepository.findByUser_UserId(userDetails.getUserId())
+                                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                                                "Current user is not linked to a patient profile"));
+
+                List<Invoice> invoices = invoiceRepository
+                                .findByPatient_PatientIdOrderByCreatedAtDesc(patient.getPatientId());
+
+                return invoices.stream()
+                                .map(inv -> {
+                                        BigDecimal total = computeTotal(inv);
+
+                                        String diagnosis = inv.getMedicalRecord().getFinalDiagnosis();
+                                        if ((diagnosis == null || diagnosis.isBlank())
+                                                        && inv.getMedicalRecord().getFinalDisease() != null) {
+                                                diagnosis = inv.getMedicalRecord().getFinalDisease().getDiseaseNameVi();
+                                        }
+
+                                        String doctorName = inv.getMedicalRecord().getDoctor() != null
+                                                        ? inv.getMedicalRecord().getDoctor().getUser().getFullName()
+                                                        : "";
+
+                                        return InvoiceDTOs.PatientInvoiceResponse.builder()
+                                                        .invoiceId(inv.getInvoiceId())
+                                                        .invoiceCode(inv.getInvoiceCode())
+                                                        .doctorName(doctorName)
+                                                        .recordDiagnosis(diagnosis)
+                                                        .consultationFee(inv.getConsultationFee())
+                                                        .medicationFee(inv.getMedicationFee())
+                                                        .otherFee(inv.getOtherFee())
+                                                        .discount(inv.getDiscount())
+                                                        .totalAmount(total)
+                                                        .paymentStatus(inv.getPaymentStatus())
+                                                        .createdAt(inv.getCreatedAt())
+                                                        .build();
+                                })
+                                .toList();
+        }
+
+        @Transactional(readOnly = true)
+        public InvoiceDTOs.InvoiceDetailResponse getInvoiceByRecord(Long recordId) {
+                Invoice invoice = invoiceRepository.findByMedicalRecord_RecordId(recordId)
+                                .orElseThrow(() -> new RuntimeException("Invoice not found for this record"));
+                BigDecimal total = invoice.getTotalAmount() != null ? invoice.getTotalAmount() : computeTotal(invoice);
+                return mapToResponse(invoice, total);
+        }
+
+        @Transactional
+        public InvoiceDTOs.CreatePaymentIntentResponse createPaymentIntent(Long invoiceId) {
+                Invoice invoice = invoiceRepository.findById(invoiceId)
+                                .orElseThrow(() -> new RuntimeException("Invoice not found"));
+
+                if ("PAID".equals(invoice.getPaymentStatus())) {
+                        throw new RuntimeException("Invoice is already paid");
+                }
+
+                if (invoice.getStripePaymentIntentId() != null) {
+                        try {
+                                PaymentIntent existing = PaymentIntent.retrieve(invoice.getStripePaymentIntentId());
+                                return InvoiceDTOs.CreatePaymentIntentResponse.builder()
+                                                .clientSecret(existing.getClientSecret())
+                                                .invoiceId(invoiceId)
+                                                .build();
+                        } catch (StripeException e) {
+                                // Intent expired or invalid, create new one
+                        }
+                }
+
+                BigDecimal total = computeTotal(invoice);
+
+                try {
+                        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                                        .setAmount(total.longValue())
+                                        .setCurrency("vnd")
+                                        .putMetadata("invoice_id", String.valueOf(invoiceId))
+                                        .putMetadata("invoice_code", invoice.getInvoiceCode())
+                                        .build();
+
+                        PaymentIntent paymentIntent = PaymentIntent.create(params);
+
+                        invoice.setStripePaymentIntentId(paymentIntent.getId());
+                        invoiceRepository.save(invoice);
+
+                        return InvoiceDTOs.CreatePaymentIntentResponse.builder()
+                                        .clientSecret(paymentIntent.getClientSecret())
+                                        .invoiceId(invoiceId)
+                                        .build();
+                } catch (StripeException e) {
+                        throw new RuntimeException("Failed to create Stripe PaymentIntent: " + e.getMessage());
+                }
+        }
+
+        @Transactional
+        public InvoiceDTOs.PaymentResponse payInvoice(Long invoiceId, InvoiceDTOs.PaymentRequest request) {
+                Invoice invoice = invoiceRepository.findById(invoiceId)
+                                .orElseThrow(() -> new RuntimeException("Invoice not found"));
+
+                if ("PAID".equals(invoice.getPaymentStatus())) {
+                        throw new RuntimeException("Invoice is already paid");
+                }
+
+                if (invoice.getStripePaymentIntentId() != null) {
+                        try {
+                                PaymentIntent paymentIntent = PaymentIntent
+                                                .retrieve(invoice.getStripePaymentIntentId());
+                                if (!"succeeded".equals(paymentIntent.getStatus())) {
+                                        throw new RuntimeException("Payment has not been completed. Status: "
+                                                        + paymentIntent.getStatus());
+                                }
+                        } catch (StripeException e) {
+                                throw new RuntimeException("Failed to verify Stripe payment: " + e.getMessage());
+                        }
+                }
+
+                Payment payment = Payment.builder()
+                                .paymentCode("PAY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                                .invoice(invoice)
+                                .amount(request.getAmount())
+                                .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod()
+                                                : "CREDIT_CARD")
+                                .transactionRef(request.getStripePaymentIntentId())
+                                .status("SUCCESS")
+                                .build();
+
+                payment = paymentRepository.save(payment);
+
+                invoice.setPaymentStatus("PAID");
+                invoiceRepository.save(invoice);
+
+                return InvoiceDTOs.PaymentResponse.builder()
+                                .paymentId(payment.getPaymentId())
+                                .paymentCode(payment.getPaymentCode())
+                                .amount(payment.getAmount())
+                                .paymentMethod(payment.getPaymentMethod())
+                                .status(payment.getStatus())
+                                .paidAt(LocalDateTime.now())
+                                .build();
+        }
+
+        private InvoiceDTOs.InvoiceDetailResponse mapToResponse(Invoice invoice, BigDecimal calculatedTotal) {
+                return InvoiceDTOs.InvoiceDetailResponse.builder()
+                                .invoiceId(invoice.getInvoiceId())
+                                .invoiceCode(invoice.getInvoiceCode())
+                                .recordId(invoice.getMedicalRecord().getRecordId())
+                                .patientId(invoice.getPatient().getPatientId())
+                                .patientName(invoice.getPatient().getUser() != null
+                                                ? invoice.getPatient().getUser().getFullName()
+                                                : "")
+                                .consultationFee(invoice.getConsultationFee())
+                                .medicationFee(invoice.getMedicationFee())
+                                .otherFee(invoice.getOtherFee())
+                                .discount(invoice.getDiscount())
+                                .totalAmount(calculatedTotal != null ? calculatedTotal : invoice.getTotalAmount())
+                                .paymentStatus(invoice.getPaymentStatus())
+                                .createdAt(invoice.getCreatedAt())
+                                .build();
+        }
+
+        private BigDecimal computeTotal(Invoice inv) {
+                if (inv == null)
+                        return BigDecimal.ZERO;
+                BigDecimal consultation = inv.getConsultationFee() != null ? inv.getConsultationFee() : BigDecimal.ZERO;
+                BigDecimal medication = inv.getMedicationFee() != null ? inv.getMedicationFee() : BigDecimal.ZERO;
+                BigDecimal other = inv.getOtherFee() != null ? inv.getOtherFee() : BigDecimal.ZERO;
+                BigDecimal discount = inv.getDiscount() != null ? inv.getDiscount() : BigDecimal.ZERO;
+                BigDecimal total = consultation.add(medication).add(other).subtract(discount);
+                if (total.compareTo(BigDecimal.ZERO) < 0)
+                        return BigDecimal.ZERO;
+                return total;
+        }
 }

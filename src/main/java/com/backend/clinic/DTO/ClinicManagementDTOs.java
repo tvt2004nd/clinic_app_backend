@@ -71,6 +71,24 @@ public class ClinicManagementDTOs {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    public static class ScheduleConflictCheckRequest {
+        @NotNull(message = "Doctor ID is required")
+        private Long doctorId;
+
+        @NotNull(message = "Work date is required")
+        private LocalDate workDate;
+
+        @NotNull(message = "Shift start is required")
+        private LocalTime shiftStart;
+
+        @NotNull(message = "Shift end is required")
+        private LocalTime shiftEnd;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class ClinicRoomResponse {
         private Long roomId;
         private String roomCode;
@@ -131,5 +149,14 @@ public class ClinicManagementDTOs {
         private Integer bookedCount;
         private String status;
         private LocalDateTime createdAt;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ScheduleConflictResponse {
+        private boolean conflict;
+        private DoctorAssignmentResponse existingSchedule;
     }
 }
