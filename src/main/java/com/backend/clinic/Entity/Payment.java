@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Table(name = "payments", uniqueConstraints = {
         @UniqueConstraint(columnNames = "payment_code", name = "uk_payments_code")
 })
+@EntityListeners(com.backend.clinic.Config.PaymentEntityListener.class)
 @Getter
 @Setter
 @NoArgsConstructor

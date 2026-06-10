@@ -20,6 +20,17 @@ public class CloudinaryService {
     public Map uploadPhoto(MultipartFile file, Long recordId) throws IOException {
         long timestamp = System.currentTimeMillis() / 1000;
         String publicId = "record_" + recordId + "_" + timestamp;
+        return uploadToCloudinary(file, publicId);
+    }
+
+    public Map uploadAvatar(MultipartFile file, Long userId) throws IOException {
+        long timestamp = System.currentTimeMillis() / 1000;
+        String publicId = "avatar_" + userId + "_" + timestamp;
+        return uploadToCloudinary(file, publicId);
+    }
+
+    private Map uploadToCloudinary(MultipartFile file, String publicId) throws IOException {
+        long timestamp = System.currentTimeMillis() / 1000;
 
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("public_id", publicId);

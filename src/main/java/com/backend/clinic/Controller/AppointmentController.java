@@ -1,18 +1,72 @@
 package com.backend.clinic.Controller;
 
-import com.backend.clinic.Entity.*;
-import com.backend.clinic.Repository.*;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
-
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.backend.clinic.Entity.Appointment;
+import com.backend.clinic.Entity.Conversation;
+import com.backend.clinic.Entity.Doctor;
+import com.backend.clinic.Entity.DoctorSchedule;
+import com.backend.clinic.Entity.MedicalRecord;
+import com.backend.clinic.Entity.Patient;
+import com.backend.clinic.Entity.User;
+import com.backend.clinic.Repository.AppointmentRepository;
+import com.backend.clinic.Repository.ConversationRepository;
+import com.backend.clinic.Repository.DoctorRepository;
+import com.backend.clinic.Repository.DoctorScheduleRepository;
+import com.backend.clinic.Repository.MedicalRecordRepository;
+import com.backend.clinic.Repository.PatientRepository;
+import com.backend.clinic.Repository.UserRepository;
+
+import lombok.RequiredArgsConstructor;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.backend.clinic.Entity.Appointment;
+import com.backend.clinic.Entity.Conversation;
+import com.backend.clinic.Entity.Doctor;
+import com.backend.clinic.Entity.DoctorSchedule;
+import com.backend.clinic.Entity.MedicalRecord;
+import com.backend.clinic.Entity.Patient;
+import com.backend.clinic.Entity.User;
+import com.backend.clinic.Repository.AppointmentRepository;
+import com.backend.clinic.Repository.ConversationRepository;
+import com.backend.clinic.Repository.DoctorRepository;
+import com.backend.clinic.Repository.DoctorScheduleRepository;
+import com.backend.clinic.Repository.MedicalRecordRepository;
+import com.backend.clinic.Repository.PatientRepository;
+import com.backend.clinic.Repository.UserRepository;
+
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/appointments")
@@ -165,6 +219,7 @@ public class AppointmentController {
                     map.put("patientPhone", a.getPatient().getUser().getPhone() != null
                             ? a.getPatient().getUser().getPhone()
                             : "");
+                    map.put("avatarUrl", a.getPatient().getUser().getAvatarUrl());
                     map.put("date", a.getAppointmentDate().toString());
                     map.put("time", a.getAppointmentTime().toString());
                     map.put("status", a.getStatus());

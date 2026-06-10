@@ -1,18 +1,24 @@
 package com.backend.clinic.Controller;
 
+import java.time.LocalDate;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.backend.clinic.Entity.Doctor;
 import com.backend.clinic.Entity.DoctorSchedule;
 import com.backend.clinic.Repository.DoctorRepository;
 import com.backend.clinic.Repository.DoctorScheduleRepository;
 import com.backend.clinic.Service.ClinicManagementService;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
-import java.util.List;
-import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/public")
@@ -24,13 +30,17 @@ public class PublicController {
     private final DoctorScheduleRepository doctorScheduleRepository;
     private final ClinicManagementService clinicManagementService;
 
-    @Transactional(readOnly = true)
+@Transactional(readOnly = true)
     @GetMapping("/doctors")
     public ResponseEntity<?> getDoctors() {
         List<Doctor> doctors = doctorRepository.findAll();
         var response = doctors.stream().map(doc -> java.util.Map.<String, Object>of(
                 "doctorId", doc.getDoctorId(),
                 "fullName", doc.getUser().getFullName(),
+                
+                // === THÊM DÒNG NÀY ĐỂ BACKEND TRẢ VỀ LINK ẢNH ===
+                "avatarUrl", doc.getUser().getAvatarUrl() != null ? doc.getUser().getAvatarUrl() : "",
+                
                 "specialty", doc.getSpecialty().getSpecialtyName(),
                 "experienceYears", doc.getExperienceYears(),
                 "rating", doc.getRating(),
