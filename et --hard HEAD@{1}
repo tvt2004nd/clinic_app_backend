@@ -1,0 +1,28 @@
+[33mcd0b589[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mtranvantien[m[33m)[m HEAD@{0}: pull origin tranvantien: Merge made by the 'ort' strategy.
+[33m4526f96[m HEAD@{1}: commit: fix avatar
+[33md1fde45[m HEAD@{2}: commit: fix trung lap data
+[33m4cc9023[m HEAD@{3}: reset: moving to HEAD
+[33m4cc9023[m HEAD@{4}: checkout: moving from nam to tranvantien
+[33m7f86408[m[33m ([m[1;32mnam[m[33m)[m HEAD@{5}: commit: Save work before switching branch
+[33mca63580[m[33m ([m[1;31morigin/nam[m[33m)[m HEAD@{6}: rebase (finish): returning to refs/heads/nam
+[33mca63580[m[33m ([m[1;31morigin/nam[m[33m)[m HEAD@{7}: rebase (continue): update
+[33ma2cdebf[m[33m ([m[1;32mmain[m[33m)[m HEAD@{8}: rebase (start): checkout main
+[33m1b59ee7[m HEAD@{9}: checkout: moving from tranvantien to nam
+[33m4cc9023[m HEAD@{10}: reset: moving to HEAD
+[33m4cc9023[m HEAD@{11}: rebase (abort): returning to refs/heads/tranvantien
+[33ma487b69[m HEAD@{12}: commit (amend): Merge pull request #2 from tvt2004nd/nguyen
+[33m9b97e61[m HEAD@{13}: rebase (start): checkout 9b97e61
+[33m4cc9023[m HEAD@{14}: commit (amend): Resolve clinic merge conflicts and preserve backend functionality
+[33mef56e88[m HEAD@{15}: commit (merge): Resolve clinic merge conflicts and preserve backend functionality
+[33md170159[m HEAD@{16}: checkout: moving from nam to tranvantien
+[33m1b59ee7[m HEAD@{17}: checkout: moving from tranvantien to nam
+[33md170159[m HEAD@{18}: commit: fix conflicc
+[33mcfae7e3[m HEAD@{19}: commit: fix conflic
+[33m5b6d738[m HEAD@{20}: commit (merge): Merge branch 'main' of https://github.com/tvt2004nd/clinic_app_backend into tranvantien
+[33mf796a51[m HEAD@{21}: commit: Save local backend work before pull
+[33m4b45dc0[m HEAD@{22}: commit: update login gg
+[33ma2cdebf[m[33m ([m[1;32mmain[m[33m)[m HEAD@{23}: checkout: moving from main to tranvantien
+[33ma2cdebf[m[33m ([m[1;32mmain[m[33m)[m HEAD@{24}: commit: update users
+[33me82bcf0[m HEAD@{25}: commit: create db
+[33md041952[m HEAD@{26}: Branch: renamed refs/heads/master to refs/heads/main
+[33md041952[m HEAD@{28}: commit (initial): first commit
