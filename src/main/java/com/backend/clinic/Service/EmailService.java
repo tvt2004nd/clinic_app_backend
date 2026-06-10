@@ -10,21 +10,6 @@ public class EmailService {
 
 
 
-    @Autowired(required = false)
-    private JavaMailSender mailSender;
-
-    public void sendOtpEmail(String toEmail, String otp) {
-        if (mailSender == null) {
-            System.err.println("WARNING: JavaMailSender is not configured. Cannot send email to " + toEmail);
-            return;
-        }
-
-
-    @Autowired
-    private JavaMailSender mailSender;
-
-    public void sendOtpEmail(String toEmail, String otp) {
-
 
     @Autowired
     private JavaMailSender mailSender;

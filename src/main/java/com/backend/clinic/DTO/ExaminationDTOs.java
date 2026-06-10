@@ -1,5 +1,11 @@
 package com.backend.clinic.DTO;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.List;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -9,12 +15,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
-import java.util.List;
 
 public class ExaminationDTOs {
 
@@ -213,6 +213,7 @@ public class ExaminationDTOs {
         private String title;
         private String specialtyName;
         private BigDecimal consultationFee;
+        private String avatarUrl;
     }
 
     @Data
@@ -373,5 +374,7 @@ public class ExaminationDTOs {
         private String fullName;
         private String phone;
         private String lastVisitDate;
+        private Long lastRecordId;
+        private String avatarUrl; 
     }
 }

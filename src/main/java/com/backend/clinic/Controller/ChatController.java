@@ -1,22 +1,10 @@
 package com.backend.clinic.Controller;
 
-import com.backend.clinic.DTO.ChatDTOs.ChatRequest;
-import com.backend.clinic.DTO.ChatDTOs.ChatResponse;
-import com.backend.clinic.Entity.Appointment;
-import com.backend.clinic.Entity.Conversation;
-import com.backend.clinic.Entity.ConversationMessage;
-import com.backend.clinic.Entity.Doctor;
-import com.backend.clinic.Entity.Patient;
-import com.backend.clinic.Entity.User;
-import com.backend.clinic.Repository.AppointmentRepository;
-import com.backend.clinic.Repository.ConversationMessageRepository;
-import com.backend.clinic.Repository.ConversationRepository;
-import com.backend.clinic.Repository.DoctorRepository;
-import com.backend.clinic.Repository.PatientRepository;
-import com.backend.clinic.Repository.UserRepository;
-import com.backend.clinic.Service.GeminiService;
-import lombok.Data;
-import lombok.RequiredArgsConstructor;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
@@ -32,10 +20,24 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import com.backend.clinic.DTO.ChatDTOs.ChatRequest;
+import com.backend.clinic.DTO.ChatDTOs.ChatResponse;
+import com.backend.clinic.Entity.Appointment;
+import com.backend.clinic.Entity.Conversation;
+import com.backend.clinic.Entity.ConversationMessage;
+import com.backend.clinic.Entity.Doctor;
+import com.backend.clinic.Entity.Patient;
+import com.backend.clinic.Entity.User;
+import com.backend.clinic.Repository.AppointmentRepository;
+import com.backend.clinic.Repository.ConversationMessageRepository;
+import com.backend.clinic.Repository.ConversationRepository;
+import com.backend.clinic.Repository.DoctorRepository;
+import com.backend.clinic.Repository.PatientRepository;
+import com.backend.clinic.Repository.UserRepository;
+import com.backend.clinic.Service.GeminiService;
+
+import lombok.Data;
+import lombok.RequiredArgsConstructor;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -219,6 +221,8 @@ public class ChatController {
         response.put("patientId", conversation.getPatient().getPatientId());
         response.put("doctorName", conversation.getDoctor().getUser().getFullName());
         response.put("patientName", conversation.getPatient().getUser().getFullName());
+                response.put("doctorAvatar", conversation.getDoctor().getUser().getAvatarUrl());
+        response.put("patientAvatar", conversation.getPatient().getUser().getAvatarUrl());
         return response;
     }
 
@@ -230,6 +234,7 @@ public class ChatController {
         response.put("senderName", message.getSender().getFullName());
         response.put("content", message.getContent());
         response.put("createdAt", message.getCreatedAt().toString());
+        response.put("avatarUrl", message.getSender().getAvatarUrl());
         return response;
     }
 }

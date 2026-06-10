@@ -4,6 +4,7 @@ import com.backend.clinic.DTO.AuthDTOs;
 import com.backend.clinic.Entity.User;
 import com.backend.clinic.Repository.UserRepository;
 import com.backend.clinic.Security.CustomUserDetails;
+import com.backend.clinic.Service.CloudinaryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -11,6 +12,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
 
  
 @RestController
@@ -21,6 +25,7 @@ public class UserController {
  
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CloudinaryService cloudinaryService;
  
     @GetMapping("/profile")
     public ResponseEntity<?> getUserProfile(@AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -102,34 +107,22 @@ public class UserController {
         }
 
         try {
-            // Create uploads directory if not exists
-            java.io.File uploadDir = new java.io.File("uploads");
-            if (!uploadDir.exists()) {
-                uploadDir.mkdirs();
+            Map result = cloudinaryService.uploadAvatar(file, userDetails.getUserId());
+            String avatarUrl = (String) result.get("secure_url");
+
+            if (avatarUrl == null || avatarUrl.isBlank()) {
+                return ResponseEntity.internalServerError().body("Error uploading file: Cloudinary did not return secure_url");
             }
 
-            // Save file
-            String extension = "";
-            String originalFilename = file.getOriginalFilename();
-            if (originalFilename != null && originalFilename.contains(".")) {
-                extension = originalFilename.substring(originalFilename.lastIndexOf("."));
-            } else {
-                extension = ".jpg"; // fallback
-            }
-
-            String filename = "avatar_" + userDetails.getUserId() + "_" + System.currentTimeMillis() + extension;
-            java.io.File destinationFile = new java.io.File(uploadDir, filename);
-            file.transferTo(destinationFile);
-
-            String avatarUrl = "/uploads/" + filename;
-
-            // Update user record
             User user = userRepository.findById(userDetails.getUserId())
                     .orElseThrow(() -> new RuntimeException("Error: User not found"));
             user.setAvatarUrl(avatarUrl);
             userRepository.save(user);
 
-            return ResponseEntity.ok(java.util.Map.of("avatarUrl", avatarUrl));
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("avatarUrl", avatarUrl);
+            response.put("publicId", result.get("public_id"));
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Error uploading file: " + e.getMessage());
         }
