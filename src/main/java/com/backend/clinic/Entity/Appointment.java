@@ -28,8 +28,8 @@ public class Appointment {
     @Column(name = "appointment_code", nullable = false, length = 20)
     private String appointmentCode;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "patient_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "patient_id", nullable = true)
     private Patient patient;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -50,7 +50,7 @@ public class Appointment {
     private String reason;
 
     @Builder.Default
-    @Column(nullable = false, columnDefinition = "ENUM('PENDING','CONFIRMED','CHECKED_IN','COMPLETED','CANCELLED','NO_SHOW') DEFAULT 'PENDING'")
+    @Column(nullable = false, columnDefinition = "ENUM('PENDING','CONFIRMED','COMPLETED','CANCELLED','NO_SHOW') DEFAULT 'PENDING'")
     private String status = "PENDING";
 
     @Column(name = "cancel_reason", length = 255)

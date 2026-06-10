@@ -4,9 +4,13 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+
+
 import java.math.BigDecimal;
+
 
 @Entity
 @Table(name = "medical_records", uniqueConstraints = {
@@ -30,6 +34,7 @@ public class MedicalRecord {
 
     @OneToOne(fetch = FetchType.LAZY, optional = true)
     @JoinColumn(name = "appointment_id", nullable = true)
+
     private Appointment appointment;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -60,6 +65,7 @@ public class MedicalRecord {
     @Column(name = "follow_up_date")
     private LocalDate followUpDate;
 
+
     @Column(name = "lesion_description", columnDefinition = "TEXT")
     private String lesionDescription;
 
@@ -83,6 +89,7 @@ public class MedicalRecord {
 
     @Column(name = "followup_scheduled", nullable = false)
     private boolean followupScheduled = false;
+
 
     @CreationTimestamp
     @Column(name = "examined_at", updatable = false, nullable = false, columnDefinition = "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")

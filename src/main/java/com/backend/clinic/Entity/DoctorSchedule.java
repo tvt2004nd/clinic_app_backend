@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "doctor_schedules", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"doctor_id", "work_date", "shift_start"}, name = "uk_schedule_doctor_shift")
+        @UniqueConstraint(columnNames = { "doctor_id", "work_date", "shift_start" }, name = "uk_schedule_doctor_shift")
 })
 @Getter
 @Setter
@@ -28,6 +28,10 @@ public class DoctorSchedule {
     @JoinColumn(name = "doctor_id", nullable = false)
     private Doctor doctor;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "room_id")
+    private ClinicRoom clinicRoom;
+
     @Column(name = "work_date", nullable = false)
     private LocalDate workDate;
 
@@ -38,7 +42,7 @@ public class DoctorSchedule {
     private LocalTime shiftEnd;
 
     @Builder.Default
-    @Column(name = "max_patients")
+    @Column(name = "max_patients", nullable = false, columnDefinition = "INT DEFAULT 20")
     private Integer maxPatients = 20;
 
     @Builder.Default
