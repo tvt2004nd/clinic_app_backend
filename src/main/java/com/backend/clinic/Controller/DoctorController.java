@@ -80,9 +80,11 @@ public class DoctorController {
                                                 .patientCode(r.getPatient().getPatientCode())
                                                 .fullName(r.getPatient().getUser().getFullName())
                                                 .phone(r.getPatient().getUser().getPhone())
+                                                .avatarUrl(r.getPatient().getUser().getAvatarUrl()) 
                                                 .lastVisitDate(r.getExaminedAt() != null
                                                                 ? r.getExaminedAt().toLocalDate().toString()
                                                                 : null)
+                                                .lastRecordId(r.getRecordId())
                                                 .build());
                         }
                 }
