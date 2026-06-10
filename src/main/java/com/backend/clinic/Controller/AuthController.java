@@ -59,13 +59,12 @@ public class AuthController {
     private static final String ROLE_PATIENT = "PATIENT";
 
     @PostMapping("/login")
-    public ResponseEntity<AuthDTOs.JwtResponse> authenticateUser(@Valid @RequestBody AuthDTOs.LoginRequest loginRequest) {
+    public ResponseEntity<AuthDTOs.JwtResponse> authenticateUser(
+            @Valid @RequestBody AuthDTOs.LoginRequest loginRequest) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         loginRequest.getUsername(),
-                        loginRequest.getPassword()
-                )
-        );
+                        loginRequest.getPassword()));
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
         return ResponseEntity.ok(generateJwtResponse(authentication));
@@ -158,8 +157,9 @@ public class AuthController {
     @PostMapping("/forgot-password")
     public ResponseEntity<?> forgotPassword(@Valid @RequestBody AuthDTOs.ForgotPasswordRequest request) {
         Optional<User> userOpt = userRepository.findByEmail(request.getEmail());
-        
-        // Bảo mật: Không tiết lộ việc email có tồn tại hay không (Tránh user enumeration)
+
+        // Bảo mật: Không tiết lộ việc email có tồn tại hay không (Tránh user
+        // enumeration)
         String genericMessage = "Nếu email hợp lệ, mã OTP khôi phục mật khẩu đã được gửi.";
 
         if (userOpt.isEmpty()) {
@@ -168,7 +168,7 @@ public class AuthController {
 
         User user = userOpt.get();
         String otp = String.format("%06d", new Random().nextInt(1000000));
-        
+
         user.setResetOtp(otp);
         user.setResetOtpExpiry(LocalDateTime.now().plusMinutes(10));
         userRepository.save(user);
@@ -256,8 +256,7 @@ public class AuthController {
                     "mock-google-id-" + suffix,
                     suffix + "@gmail.com",
                     "Google User " + suffix,
-                    "https://lh3.googleusercontent.com/a/mock_avatar"
-            );
+                    "https://lh3.googleusercontent.com/a/mock_avatar");
         }
 
         try {

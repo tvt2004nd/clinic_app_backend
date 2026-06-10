@@ -7,14 +7,14 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class EmailService {
-
-
-
-
-    @Autowired
+    @Autowired(required = false)
     private JavaMailSender mailSender;
 
     public void sendOtpEmail(String toEmail, String otp) {
+        if (mailSender == null) {
+            System.err.println("WARNING: JavaMailSender is not configured. Cannot send email to " + toEmail);
+            return;
+        }
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
@@ -31,16 +31,9 @@ public class EmailService {
 
             mailSender.send(message);
         } catch (Exception e) {
-
-
             System.err.println("Error sending email to " + toEmail + ": " + e.getMessage());
             e.printStackTrace();
-
             throw new RuntimeException("Không thể gửi email OTP đến " + toEmail + ": " + e.getMessage(), e);
-
-
-            
-
         }
     }
 }
