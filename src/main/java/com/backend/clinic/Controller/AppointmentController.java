@@ -6,9 +6,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,6 +26,7 @@ public class AppointmentController {
     private final UserRepository userRepository;
     private final ConversationRepository conversationRepository;
     private final MedicalRecordRepository medicalRecordRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @PostMapping
     public ResponseEntity<?> bookAppointment(@RequestBody Map<String, Object> body,
@@ -48,8 +49,6 @@ public class AppointmentController {
             Long doctorId = Long.parseLong(body.get("doctorId").toString());
             Long scheduleId = Long.parseLong(body.get("scheduleId").toString());
             String reason = body.getOrDefault("reason", "").toString();
-            String patientName = body.getOrDefault("patientName", user.getFullName()).toString();
-            String phone = body.getOrDefault("phone", user.getPhone()).toString();
 
             Doctor doctor = doctorRepository.findById(doctorId)
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy bác sĩ"));
@@ -59,6 +58,15 @@ public class AppointmentController {
 
             if ("FULL".equals(schedule.getStatus()) || "CANCELLED".equals(schedule.getStatus())) {
                 return ResponseEntity.badRequest().body(Map.of("message", "Ca khám này không còn lịch trống"));
+            }
+
+            // Prevent same patient from booking the same slot twice
+            boolean ownExists = appointmentRepository
+                    .existsByDoctor_DoctorIdAndPatient_PatientIdAndAppointmentDateAndAppointmentTimeAndStatusIn(
+                            doctorId, patient.getPatientId(), schedule.getWorkDate(), schedule.getShiftStart(),
+                            List.of("PENDING", "CONFIRMED"));
+            if (ownExists) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Bạn đã đặt lịch cho khung giờ này rồi"));
             }
 
             // Check if another patient already booked this time slot
@@ -178,6 +186,19 @@ public class AppointmentController {
 
         appt.setStatus("CONFIRMED");
         appointmentRepository.save(appt);
+        // Publish real-time update to patient (if any)
+        if (appt.getPatient() != null) {
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("appointmentId", appt.getAppointmentId());
+            payload.put("status", "CONFIRMED");
+            if (appt.getSchedule() != null) {
+                payload.put("scheduleId", appt.getSchedule().getScheduleId());
+                if (appt.getSchedule().getClinicRoom() != null)
+                    payload.put("roomId", appt.getSchedule().getClinicRoom().getRoomId());
+            }
+            messagingTemplate.convertAndSend("/topic/appointments/patient-" + appt.getPatient().getPatientId(),
+                    (Object) payload);
+        }
         conversationRepository
                 .findByDoctor_DoctorIdAndPatient_PatientId(appt.getDoctor().getDoctorId(),
                         appt.getPatient().getPatientId())
@@ -197,6 +218,19 @@ public class AppointmentController {
         appt.setStatus("COMPLETED");
         appointmentRepository.save(appt);
 
+        if (appt.getPatient() != null) {
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("appointmentId", appt.getAppointmentId());
+            payload.put("status", "COMPLETED");
+            if (appt.getSchedule() != null) {
+                payload.put("scheduleId", appt.getSchedule().getScheduleId());
+                if (appt.getSchedule().getClinicRoom() != null)
+                    payload.put("roomId", appt.getSchedule().getClinicRoom().getRoomId());
+            }
+            messagingTemplate.convertAndSend("/topic/appointments/patient-" + appt.getPatient().getPatientId(),
+                    (Object) payload);
+        }
+
         // Giảm bookedCount, nhả slot
         if (appt.getSchedule() != null) {
             DoctorSchedule schedule = appt.getSchedule();
@@ -215,18 +249,59 @@ public class AppointmentController {
     // ── DOCTOR / PATIENT: Hủy lịch hẹn ────────────────────────────────────
     @PutMapping("/{id}/cancel")
     public ResponseEntity<?> cancelAppointment(@PathVariable Long id,
-            @RequestBody(required = false) Map<String, Object> body) {
+            @RequestBody(required = false) Map<String, Object> body,
+            Authentication auth) {
+        // ensure caller is authenticated and authorized to cancel (patient owner or
+        // doctor)
+        String username = auth != null ? auth.getName() : null;
+        if (username == null) {
+            return ResponseEntity.status(401).body(Map.of("message", "Yêu cầu đăng nhập"));
+        }
+        User caller = userRepository.findByUsername(username).orElse(null);
         Appointment appt = appointmentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy lịch hẹn"));
 
-        if ("COMPLETED".equals(appt.getStatus())) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Không thể hủy lịch hẹn đã hoàn thành"));
+        // Do not allow cancel when appointment is completed or marked as no-show
+        if ("COMPLETED".equals(appt.getStatus()) || "NO_SHOW".equals(appt.getStatus())) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Không thể hủy lịch hẹn đã hoàn thành hoặc vắng mặt"));
+        }
+
+        // If already cancelled, inform the caller
+        if ("CANCELLED".equals(appt.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Lịch hẹn đã được hủy trước đó"));
+        }
+
+        // Authorization: only patient who owns the appointment or the assigned doctor
+        // may cancel
+        boolean isPatientOwner = appt.getPatient() != null && caller != null
+                && appt.getPatient().getUser() != null
+                && appt.getPatient().getUser().getUserId().equals(caller.getUserId());
+        boolean isDoctorOwner = appt.getDoctor() != null && caller != null
+                && appt.getDoctor().getUser() != null
+                && appt.getDoctor().getUser().getUserId().equals(caller.getUserId());
+        if (!isPatientOwner && !isDoctorOwner) {
+            return ResponseEntity.status(403).body(Map.of("message", "Bạn không có quyền hủy lịch hẹn này"));
         }
 
         String reason = body != null ? body.getOrDefault("reason", "").toString() : "";
         appt.setStatus("CANCELLED");
         appt.setCancelReason(reason);
         appointmentRepository.save(appt);
+
+        if (appt.getPatient() != null) {
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("appointmentId", appt.getAppointmentId());
+            payload.put("status", "CANCELLED");
+            payload.put("cancelReason", reason);
+            if (appt.getSchedule() != null) {
+                payload.put("scheduleId", appt.getSchedule().getScheduleId());
+                if (appt.getSchedule().getClinicRoom() != null)
+                    payload.put("roomId", appt.getSchedule().getClinicRoom().getRoomId());
+            }
+            messagingTemplate.convertAndSend("/topic/appointments/patient-" + appt.getPatient().getPatientId(),
+                    (Object) payload);
+        }
 
         // Giảm bookedCount của ca khám, mở lại trạng thái AVAILABLE
         if (appt.getSchedule() != null) {
@@ -241,5 +316,101 @@ public class AppointmentController {
         }
 
         return ResponseEntity.ok(Map.of("message", "Đã hủy lịch hẹn"));
+    }
+
+    // ── PATIENT: Yêu cầu đổi lịch hẹn (reschedule) ─────────────────────────
+    @PutMapping("/{id}/reschedule")
+    public ResponseEntity<?> rescheduleAppointment(@PathVariable Long id,
+            @RequestBody Map<String, Object> body,
+            Authentication auth) {
+        Appointment appt = appointmentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy lịch hẹn"));
+
+        String username = auth != null ? auth.getName() : null;
+        if (username == null) {
+            return ResponseEntity.status(401).body(Map.of("message", "Yêu cầu đăng nhập"));
+        }
+        User caller = userRepository.findByUsername(username).orElse(null);
+
+        // Only patient owner may request reschedule
+        boolean isPatientOwner = appt.getPatient() != null && caller != null
+                && appt.getPatient().getUser() != null
+                && appt.getPatient().getUser().getUserId().equals(caller.getUserId());
+        if (!isPatientOwner) {
+            return ResponseEntity.status(403).body(Map.of("message", "Bạn không có quyền đổi lịch hẹn này"));
+        }
+
+        if ("COMPLETED".equals(appt.getStatus()) || "CANCELLED".equals(appt.getStatus())
+                || "NO_SHOW".equals(appt.getStatus())) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Không thể đổi lịch cho lịch hẹn đã hoàn tất/đã hủy/vắng mặt"));
+        }
+
+        if (body == null || !body.containsKey("scheduleId")) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Thiếu scheduleId"));
+        }
+
+        Long newScheduleId = Long.parseLong(body.get("scheduleId").toString());
+        DoctorSchedule newSchedule = doctorScheduleRepository.findById(newScheduleId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy ca khám mới"));
+
+        if ("FULL".equals(newSchedule.getStatus()) || "CANCELLED".equals(newSchedule.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Ca khám mới không khả dụng"));
+        }
+
+        DoctorSchedule oldSchedule = appt.getSchedule();
+        if (oldSchedule != null && oldSchedule.getScheduleId().equals(newSchedule.getScheduleId())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Ca khám không thay đổi"));
+        }
+
+        // Prevent rescheduling into a slot already taken by another appointment
+        boolean conflict = appointmentRepository
+                .existsByDoctor_DoctorIdAndAppointmentDateAndAppointmentTimeAndStatusIn(
+                        appt.getDoctor().getDoctorId(), newSchedule.getWorkDate(), newSchedule.getShiftStart(),
+                        List.of("PENDING", "CONFIRMED"));
+        if (conflict) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("message", "Ca khám mới đã có người đặt, vui lòng chọn khung giờ khác"));
+        }
+
+        // Update booked counts: free old slot, reserve new slot
+        if (oldSchedule != null) {
+            if (oldSchedule.getBookedCount() > 0) {
+                oldSchedule.setBookedCount(oldSchedule.getBookedCount() - 1);
+            }
+            if ("FULL".equals(oldSchedule.getStatus())) {
+                oldSchedule.setStatus("AVAILABLE");
+            }
+            doctorScheduleRepository.save(oldSchedule);
+        }
+
+        newSchedule.setBookedCount(newSchedule.getBookedCount() + 1);
+        if (newSchedule.getBookedCount() >= newSchedule.getMaxPatients()) {
+            newSchedule.setStatus("FULL");
+        }
+        doctorScheduleRepository.save(newSchedule);
+
+        // Apply new schedule to appointment and set back to PENDING for doctor's
+        // confirmation
+        appt.setSchedule(newSchedule);
+        appt.setAppointmentDate(newSchedule.getWorkDate());
+        appt.setAppointmentTime(newSchedule.getShiftStart());
+        appt.setStatus("PENDING");
+        appointmentRepository.save(appt);
+
+        // Notify patient (and any subscribers) about requested change
+        if (appt.getPatient() != null) {
+            java.util.Map<String, Object> payload = new java.util.HashMap<>();
+            payload.put("appointmentId", appt.getAppointmentId());
+            payload.put("status", appt.getStatus());
+            payload.put("scheduleId", newSchedule.getScheduleId());
+            if (newSchedule.getClinicRoom() != null)
+                payload.put("roomId", newSchedule.getClinicRoom().getRoomId());
+            messagingTemplate.convertAndSend(
+                    "/topic/appointments/patient-" + appt.getPatient().getPatientId(),
+                    (Object) payload);
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Yêu cầu đổi lịch đã được gửi", "status", "PENDING"));
     }
 }

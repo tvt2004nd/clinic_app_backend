@@ -1,7 +1,20 @@
 package com.backend.clinic.Controller;
 
-import com.backend.clinic.Entity.*;
-import com.backend.clinic.Repository.*;
+import com.backend.clinic.DTO.ChatDTOs.ChatRequest;
+import com.backend.clinic.DTO.ChatDTOs.ChatResponse;
+import com.backend.clinic.Entity.Appointment;
+import com.backend.clinic.Entity.Conversation;
+import com.backend.clinic.Entity.ConversationMessage;
+import com.backend.clinic.Entity.Doctor;
+import com.backend.clinic.Entity.Patient;
+import com.backend.clinic.Entity.User;
+import com.backend.clinic.Repository.AppointmentRepository;
+import com.backend.clinic.Repository.ConversationMessageRepository;
+import com.backend.clinic.Repository.ConversationRepository;
+import com.backend.clinic.Repository.DoctorRepository;
+import com.backend.clinic.Repository.PatientRepository;
+import com.backend.clinic.Repository.UserRepository;
+import com.backend.clinic.Service.GeminiService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -10,7 +23,14 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,9 +38,12 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
+@RequestMapping("/api/chat")
+@CrossOrigin(origins = "*")
 @RequiredArgsConstructor
 public class ChatController {
 
+    private final GeminiService geminiService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
@@ -36,54 +59,56 @@ public class ChatController {
         private String content;
     }
 
-    // 1. WebSocket Endpoint for sending messages
+    @PostMapping("/message")
+    public ResponseEntity<ChatResponse> sendAiMessage(@RequestBody ChatRequest request, Authentication authentication) {
+        String username = authentication.getName();
+        ChatResponse response = geminiService.processChat(request, username);
+        return ResponseEntity.ok(response);
+    }
+
     @Transactional
     @MessageMapping("/chat.send")
     public void sendMessage(@Payload ChatMessagePayload payload) {
-        Conversation conv = conversationRepository.findById(payload.getConversationId()).orElse(null);
+        Conversation conversation = conversationRepository.findById(payload.getConversationId()).orElse(null);
         User sender = userRepository.findById(payload.getSenderId()).orElse(null);
 
-        if (conv != null && sender != null) {
-            ConversationMessage message = ConversationMessage.builder()
-                    .conversation(conv)
-                    .sender(sender)
-                    .content(payload.getContent())
-                    .build();
-
-            messageRepository.save(message);
-
-            // Broadcast to the conversation topic
-            String destination = "/topic/conversation/" + conv.getConversationId();
-            Object payloadObj = Map.<String, Object>of(
-                    "messageId", message.getMessageId(),
-                    "conversationId", conv.getConversationId(),
-                    "senderId", sender.getUserId(),
-                    "senderName", sender.getFullName(),
-                    "content", message.getContent(),
-                    "createdAt", message.getCreatedAt().toString()
-            );
-            messagingTemplate.convertAndSend(destination, payloadObj);
+        if (conversation == null || sender == null) {
+            return;
         }
+
+        ConversationMessage message = ConversationMessage.builder()
+                .conversation(conversation)
+                .sender(sender)
+                .content(payload.getContent())
+                .build();
+
+        messageRepository.save(message);
+        messagingTemplate.convertAndSend(
+                "/topic/conversation/" + conversation.getConversationId(),
+                (Object) toMessageResponse(message)
+        );
     }
 
-    // 2. REST Endpoint to get or create a conversation
     @Transactional
-    @GetMapping("/api/chat/conversation")
+    @GetMapping("/conversation")
     public ResponseEntity<?> getOrCreateConversation(
             @RequestParam(required = false) Long doctorId,
             @RequestParam(required = false) Long patientId,
             Authentication auth) {
 
         User currentUser = userRepository.findByUsername(auth.getName()).orElseThrow();
-        
-        // If one of the IDs is missing, infer it from the logged in user
+
         if (doctorId == null) {
-            Doctor d = doctorRepository.findByUser_UserId(currentUser.getUserId()).orElse(null);
-            if (d != null) doctorId = d.getDoctorId();
+            Doctor doctor = doctorRepository.findByUser_UserId(currentUser.getUserId()).orElse(null);
+            if (doctor != null) {
+                doctorId = doctor.getDoctorId();
+            }
         }
         if (patientId == null) {
-            Patient p = patientRepository.findByUser_UserId(currentUser.getUserId()).orElse(null);
-            if (p != null) patientId = p.getPatientId();
+            Patient patient = patientRepository.findByUser_UserId(currentUser.getUserId()).orElse(null);
+            if (patient != null) {
+                patientId = patient.getPatientId();
+            }
         }
 
         if (doctorId == null || patientId == null) {
@@ -92,7 +117,7 @@ public class ChatController {
 
         if (!appointmentRepository.existsByDoctor_DoctorIdAndPatient_PatientIdAndStatusNotIn(doctorId, patientId,
                 List.of("CANCELLED", "NO_SHOW"))) {
-            return ResponseEntity.status(403).body(Map.of("error", "Bạn cần đặt lịch khám trước khi chat với bác sĩ này"));
+            return ResponseEntity.status(403).body(Map.of("error", "Ban can dat lich kham truoc khi chat voi bac si nay"));
         }
 
         Long finalDoctorId = doctorId;
@@ -100,65 +125,42 @@ public class ChatController {
 
         Conversation conversation = conversationRepository.findByDoctor_DoctorIdAndPatient_PatientId(doctorId, patientId)
                 .orElseGet(() -> {
-                    Doctor d = doctorRepository.findById(finalDoctorId).orElseThrow();
-                    Patient p = patientRepository.findById(finalPatientId).orElseThrow();
-                    Conversation newConv = Conversation.builder()
-                            .doctor(d)
-                            .patient(p)
-                            .build();
-                    return conversationRepository.save(newConv);
+                    Doctor doctor = doctorRepository.findById(finalDoctorId).orElseThrow();
+                    Patient patient = patientRepository.findById(finalPatientId).orElseThrow();
+                    return conversationRepository.save(Conversation.builder()
+                            .doctor(doctor)
+                            .patient(patient)
+                            .build());
                 });
 
-        return ResponseEntity.ok(Map.<String, Object>of(
-                "conversationId", conversation.getConversationId(),
-                "doctorId", conversation.getDoctor().getDoctorId(),
-                "patientId", conversation.getPatient().getPatientId(),
-                "doctorName", conversation.getDoctor().getUser().getFullName(),
-                "patientName", conversation.getPatient().getUser().getFullName()
-        ));
+        return ResponseEntity.ok(toConversationResponse(conversation));
     }
 
     @Transactional
-    @PostMapping("/api/chat/send")
+    @PostMapping("/send")
     public ResponseEntity<?> sendMessageRest(@RequestBody ChatMessagePayload payload) {
-        Conversation conv = conversationRepository.findById(payload.getConversationId()).orElse(null);
+        Conversation conversation = conversationRepository.findById(payload.getConversationId()).orElse(null);
         User sender = userRepository.findById(payload.getSenderId()).orElse(null);
 
-        if (conv == null || sender == null) {
+        if (conversation == null || sender == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "Conversation or sender not found"));
         }
 
         ConversationMessage message = ConversationMessage.builder()
-                .conversation(conv)
+                .conversation(conversation)
                 .sender(sender)
                 .content(payload.getContent())
                 .build();
 
         messageRepository.save(message);
+        Map<String, Object> response = toMessageResponse(message);
+        messagingTemplate.convertAndSend("/topic/conversation/" + conversation.getConversationId(), (Object) response);
 
-        String destination = "/topic/conversation/" + conv.getConversationId();
-        Object broadcastPayload = Map.<String, Object>of(
-                "messageId", message.getMessageId(),
-                "conversationId", conv.getConversationId(),
-                "senderId", sender.getUserId(),
-                "senderName", sender.getFullName(),
-                "content", message.getContent(),
-                "createdAt", message.getCreatedAt().toString()
-        );
-        messagingTemplate.convertAndSend(destination, broadcastPayload);
-
-        return ResponseEntity.ok(Map.<String, Object>of(
-                "messageId", message.getMessageId(),
-                "conversationId", conv.getConversationId(),
-                "senderId", sender.getUserId(),
-                "senderName", sender.getFullName(),
-                "content", message.getContent(),
-                "createdAt", message.getCreatedAt().toString()
-        ));
+        return ResponseEntity.ok(response);
     }
 
-    @GetMapping("/api/chat/conversations")
     @Transactional
+    @GetMapping("/conversations")
     public ResponseEntity<?> getMyConversations(Authentication auth) {
         User currentUser = userRepository.findByUsername(auth.getName()).orElseThrow();
         Doctor doctor = doctorRepository.findByUser_UserId(currentUser.getUserId()).orElse(null);
@@ -188,39 +190,46 @@ public class ChatController {
         }
 
         return ResponseEntity.ok(conversations.values().stream()
-                .map(c -> {
-                    Map<String, Object> map = new java.util.LinkedHashMap<>();
-                    map.put("conversationId", c.getConversationId());
-                    map.put("doctorId", c.getDoctor().getDoctorId());
-                    map.put("patientId", c.getPatient().getPatientId());
-                    map.put("doctorName", c.getDoctor().getUser().getFullName());
-                    map.put("patientName", c.getPatient().getUser().getFullName());
-
-                    messageRepository.findFirstByConversation_ConversationIdOrderByCreatedAtDesc(c.getConversationId())
+                .map(conversation -> {
+                    Map<String, Object> response = toConversationResponse(conversation);
+                    messageRepository.findFirstByConversation_ConversationIdOrderByCreatedAtDesc(conversation.getConversationId())
                             .ifPresent(last -> {
-                                map.put("lastMessage", last.getContent());
-                                map.put("lastMessageTime", last.getCreatedAt().toString());
+                                response.put("lastMessage", last.getContent());
+                                response.put("lastMessageTime", last.getCreatedAt().toString());
                             });
-
-                    return map;
+                    return response;
                 })
                 .collect(Collectors.toList()));
     }
 
     @Transactional(readOnly = true)
-    @GetMapping("/api/chat/conversation/{conversationId}/messages")
+    @GetMapping("/conversation/{conversationId}/messages")
     public ResponseEntity<?> getMessages(@PathVariable Long conversationId) {
         List<ConversationMessage> messages = messageRepository.findByConversation_ConversationIdOrderByCreatedAtAsc(conversationId);
-        
-        List<Map<String, Object>> response = messages.stream().map(m -> Map.<String, Object>of(
-                "messageId", m.getMessageId(),
-                "conversationId", m.getConversation().getConversationId(),
-                "senderId", m.getSender().getUserId(),
-                "senderName", m.getSender().getFullName(),
-                "content", m.getContent(),
-                "createdAt", m.getCreatedAt().toString()
-        )).collect(Collectors.toList());
 
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(messages.stream()
+                .map(this::toMessageResponse)
+                .collect(Collectors.toList()));
+    }
+
+    private Map<String, Object> toConversationResponse(Conversation conversation) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("conversationId", conversation.getConversationId());
+        response.put("doctorId", conversation.getDoctor().getDoctorId());
+        response.put("patientId", conversation.getPatient().getPatientId());
+        response.put("doctorName", conversation.getDoctor().getUser().getFullName());
+        response.put("patientName", conversation.getPatient().getUser().getFullName());
+        return response;
+    }
+
+    private Map<String, Object> toMessageResponse(ConversationMessage message) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("messageId", message.getMessageId());
+        response.put("conversationId", message.getConversation().getConversationId());
+        response.put("senderId", message.getSender().getUserId());
+        response.put("senderName", message.getSender().getFullName());
+        response.put("content", message.getContent());
+        response.put("createdAt", message.getCreatedAt().toString());
+        return response;
     }
 }
