@@ -107,7 +107,6 @@ public class AuthController {
         if (googleUser == null) {
             return ResponseEntity.badRequest().body("Lỗi: Google ID token không hợp lệ!");
         }
-
         User user = userRepository.findByEmail(googleUser.getEmail()).orElse(null);
         if (user == null) {
             // Đăng ký người dùng mới từ Google
@@ -116,7 +115,6 @@ public class AuthController {
 
             String baseUsername = googleUser.getEmail().split("@")[0];
             String username = generateUniqueUsername(baseUsername);
-
             user = User.builder()
                     .username(username)
                     .email(googleUser.getEmail())
@@ -128,7 +126,6 @@ public class AuthController {
                     .isActive(true)
                     .build();
             user = userRepository.save(user);
-
             createPatientRecord(user);
         } else {
             // Liên kết tài khoản Google nếu chưa có
@@ -145,7 +142,6 @@ public class AuthController {
                 userRepository.save(user);
             }
         }
-
         CustomUserDetails userDetails = CustomUserDetails.build(user);
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 userDetails, null, userDetails.getAuthorities());
